@@ -116,7 +116,7 @@ mod server {
         let port = listener.local_addr().unwrap().port();
 
         let app = Router::new()
-            .route("/*path", get(serve_sound))
+            .route("/{*path}", get(serve_sound))
             .layer(Extension(sound_dir));
 
         tauri::async_runtime::spawn(async move {

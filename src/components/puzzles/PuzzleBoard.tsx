@@ -5,7 +5,7 @@ import { chessgroundDests, chessgroundMove } from "chessops/compat";
 import { parseFen } from "chessops/fen";
 import equal from "fast-deep-equal";
 import { useAtom, useAtomValue } from "jotai";
-import { useContext, useState } from "react";
+import { useCallback, useContext, useMemo, useState } from "react";
 import { useStore } from "zustand";
 import { Chessground } from "@/chessground/Chessground";
 import { jumpToNextPuzzleAtom, moveHighlightAtom, showCoordinatesAtom } from "@/state/atoms";
@@ -68,11 +68,11 @@ function PuzzleBoard({
     : "white";
   const [pendingMove, setPendingMove] = useState<NormalMove | null>(null);
 
-  const dests = pos ? chessgroundDests(pos) : new Map();
+  const dests = useMemo(() => (pos ? chessgroundDests(pos) : new Map()), [pos]);
   const turn = pos?.turn || "white";
   const showCoordinates = useAtomValue(showCoordinatesAtom);
 
-  async function checkMove(move: Move) {
+  const checkMove = useCallback(async (move: Move) => {
     if (!pos) return;
     if (!puzzle) return;
 
@@ -111,9 +111,54 @@ function PuzzleBoard({
       setEnded(true);
     }
     reset();
-  }
+  }, [pos, puzzle, currentMove, changeCompletion, setEnded, db, jumpToNextPuzzleImmediately, generatePuzzle, reset, makeMoves, makeMove, ended]);
 
   const { ref: parentRef, height: parentHeight } = useElementSize();
+
+  const movableAfter = useCallback(
+    (orig: string, dest: string) => {
+      const from = parseSquare(orig)!;
+      const to = parseSquare(dest)!;
+      const move: NormalMove = { from, to };
+      if (
+        pos?.board.get(from)?.role === "pawn" &&
+        ((dest[1] === "8" && turn === "white") || (dest[1] === "1" && turn === "black"))
+      ) {
+        setPendingMove(move);
+      } else {
+        checkMove(move);
+      }
+    },
+    [pos, turn, checkMove],
+  );
+
+  const puzzleMovableColor =
+    puzzle &&
+    equal(position, Array(currentMove).fill(0)) &&
+    (puzzle.completion === "incomplete" || puzzle.completion === "incorrect")
+      ? turn
+      : undefined;
+
+  const movableConfig = useMemo(
+    () => ({
+      free: false,
+      color: puzzleMovableColor,
+      dests,
+      events: { after: movableAfter },
+    }),
+    [puzzleMovableColor, dests, movableAfter],
+  );
+
+  const drawableConfig = useMemo(
+    () => ({
+      enabled: true,
+      visible: true,
+      autoShapes: boardShapes,
+    }),
+    [boardShapes],
+  );
+
+  const animationConfig = useMemo(() => ({ enabled: true }), []);
 
   return (
     <Box w="100%" h="100%" ref={parentRef}>
@@ -136,42 +181,12 @@ function PuzzleBoard({
           orientation={orientation}
         />
         <Chessground
-          animation={{
-            enabled: true,
-          }}
+          animation={animationConfig}
           coordinates={showCoordinates !== "no"}
           coordinatesOnSquares={showCoordinates === "all"}
           orientation={orientation}
-          drawable={{
-            enabled: true,
-            visible: true,
-            autoShapes: boardShapes,
-          }}
-          movable={{
-            free: false,
-            color:
-              puzzle &&
-              equal(position, Array(currentMove).fill(0)) &&
-              (puzzle.completion === "incomplete" || puzzle.completion === "incorrect")
-                ? turn
-                : undefined,
-            dests: dests,
-            events: {
-              after: (orig, dest) => {
-                const from = parseSquare(orig)!;
-                const to = parseSquare(dest)!;
-                const move: NormalMove = { from, to };
-                if (
-                  pos?.board.get(from)?.role === "pawn" &&
-                  ((dest[1] === "8" && turn === "white") || (dest[1] === "1" && turn === "black"))
-                ) {
-                  setPendingMove(move);
-                } else {
-                  checkMove(move);
-                }
-              },
-            },
-          }}
+          drawable={drawableConfig}
+          movable={movableConfig}
           lastMove={
             moveHighlight && currentNode.move ? chessgroundMove(currentNode.move) : undefined
           }

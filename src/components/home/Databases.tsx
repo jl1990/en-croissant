@@ -122,7 +122,7 @@ function Databases() {
   const [progress, setProgress] = useState(0);
   useEffect(() => {
     const unlisten = events.databaseProgress.listen((e) => {
-      setProgress(e.payload.progress);
+      setProgress(e.payload.progress ?? 0);
     });
 
     return () => {

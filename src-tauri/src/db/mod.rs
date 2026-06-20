@@ -703,7 +703,7 @@ pub struct DatabaseInfo {
     player_count: i32,
     event_count: i32,
     game_count: i32,
-    storage_size: u64,
+    storage_size: f64,
     filename: String,
     indexed: bool,
 }
@@ -753,7 +753,7 @@ pub async fn get_db_info(
         .and_then(|v| v.parse::<i32>().ok())
         .unwrap_or(0);
 
-    let storage_size = path.metadata()?.len();
+    let storage_size = path.metadata()?.len() as f64;
     let filename = path.file_name().expect("get filename").to_string_lossy();
 
     let is_indexed = check_index_exists(db)?;

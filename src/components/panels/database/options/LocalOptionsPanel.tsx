@@ -13,7 +13,7 @@ import { type Piece, parseSquare } from "chessops";
 import { EMPTY_BOARD_FEN, makeFen, parseFen } from "chessops/fen";
 import dayjs from "dayjs";
 import { useAtom } from "jotai";
-import { useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Chessground } from "@/chessground/Chessground";
 import PiecesGrid from "@/components/boards/PiecesGrid";
@@ -35,6 +35,40 @@ function LocalOptionsPanel({ boardFen }: { boardFen: string }) {
   };
 
   const [selectedPiece, setSelectedPiece] = useState<Piece | null>(null);
+
+  const movableAfter = useCallback(
+    (orig: string, dest: string) => {
+      const setup = parseFen(options.fen).unwrap();
+      const p = setup.board.take(parseSquare(orig)!)!;
+      setup.board.set(parseSquare(dest)!, p);
+      setOptions((q) => ({ ...q, fen: makeFen(setup) }));
+    },
+    [options.fen, setOptions],
+  );
+
+  const movableConfig = useMemo(
+    () =>
+      ({
+        free: true,
+        color: "both" as const,
+        events: { after: movableAfter },
+      }) as { free: boolean; color: "both"; events: { after: (orig: string, dest: string) => void } },
+    [movableAfter],
+  );
+
+  const selectEvent = useCallback(
+    (key: string) => {
+      const square = parseSquare(key);
+      if (square && selectedPiece) {
+        const setup = parseFen(options.fen).unwrap();
+        setup.board.set(square, selectedPiece);
+        setOptions((q) => ({ ...q, fen: makeFen(setup) }));
+      }
+    },
+    [selectedPiece, options.fen, setOptions],
+  );
+
+  const eventsConfig = useMemo(() => ({ select: selectEvent }), [selectEvent]);
 
   return (
     <Stack>
@@ -152,28 +186,8 @@ function LocalOptionsPanel({ boardFen }: { boardFen: string }) {
               fen={options.fen}
               coordinates={false}
               lastMove={[]}
-              movable={{
-                free: true,
-                color: "both",
-                events: {
-                  after: (orig, dest) => {
-                    const setup = parseFen(options.fen).unwrap();
-                    const p = setup.board.take(parseSquare(orig)!)!;
-                    setup.board.set(parseSquare(dest)!, p);
-                    setOptions((q) => ({ ...q, fen: makeFen(setup) }));
-                  },
-                },
-              }}
-              events={{
-                select: (key) => {
-                  const square = parseSquare(key);
-                  if (square && selectedPiece) {
-                    const setup = parseFen(options.fen).unwrap();
-                    setup.board.set(square, selectedPiece);
-                    setOptions((q) => ({ ...q, fen: makeFen(setup) }));
-                  }
-                },
-              }}
+              movable={movableConfig}
+              events={eventsConfig}
             />
           </Box>
 

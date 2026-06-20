@@ -8,7 +8,7 @@ import { memo, type Ref, useEffect, useImperativeHandle, useMemo, useRef } from 
 import { useRenderTiming } from "@/utils/performance";
 import { boardImageAtom, moveMethodAtom } from "@/state/atoms";
 
-const BOARD_COORDINATE_COLORS: Record<string, { white: string; black: string }> = {
+export const BOARD_COORDINATE_COLORS: Record<string, { white: string; black: string }> = {
   blue: { white: "#dee3e6", black: "#788a94" },
   blue2: { white: "#97b2c7", black: "#546f82" },
   blue3: { white: "#d9e0e6", black: "#315991" },
@@ -37,7 +37,7 @@ const BOARD_COORDINATE_COLORS: Record<string, { white: string; black: string }> 
   gray: { white: "#e9ecef", black: "#868e96" },
 };
 
-function getBoardCoordinateColors(boardImage: string): {
+export function getBoardCoordinateColors(boardImage: string): {
   white: string;
   black: string;
 } {
@@ -65,6 +65,7 @@ function ChessgroundInner(props: ChessgroundProps & { ref?: Ref<ChessgroundRef> 
   const apiRef = useRef<Api | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const lastConfigRef = useRef<Record<string, unknown>>({});
+  const lastEventsRef = useRef(props.events);
 
   const moveMethod = useAtomValue(moveMethodAtom);
 
@@ -116,6 +117,7 @@ function ChessgroundInner(props: ChessgroundProps & { ref?: Ref<ChessgroundRef> 
       movable: props.movable,
       drawable: props.drawable,
       highlight: props.highlight,
+      events: props.events,
       premovable: props.premovable,
       animation: props.animation,
       draggable: mergedDraggable,
@@ -132,6 +134,7 @@ function ChessgroundInner(props: ChessgroundProps & { ref?: Ref<ChessgroundRef> 
       props.movable,
       props.drawable,
       props.highlight,
+      props.events,
       props.premovable,
       props.animation,
       mergedDraggable,
@@ -168,11 +171,21 @@ function ChessgroundInner(props: ChessgroundProps & { ref?: Ref<ChessgroundRef> 
     const api = apiRef.current;
     if (!api) return;
 
-    if (deepEqual(currentConfig, lastConfigRef.current)) {
+    const configChanged = !deepEqual(currentConfig, lastConfigRef.current);
+    const eventsChanged = props.events !== lastEventsRef.current;
+
+    if (!configChanged && !eventsChanged) {
       return;
     }
-    lastConfigRef.current = currentConfig;
 
+    if (configChanged) {
+      lastConfigRef.current = currentConfig;
+    }
+    if (eventsChanged) {
+      lastEventsRef.current = props.events;
+    }
+
+    // Only call api.set when something meaningful changed
     api.set({
       ...props,
       draggable: mergedDraggable,

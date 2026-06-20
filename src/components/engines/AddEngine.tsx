@@ -229,11 +229,10 @@ function EngineCard({
           path: enginePath,
           loaded: true,
           settings: config.options
-            .filter((o) => requiredEngineSettings.includes(o.value.name))
+            .filter((o) => requiredEngineSettings.includes(o.name))
             .map((o) => ({
-              name: o.value.name,
-              // @ts-expect-error
-              value: o.value.default,
+              name: o.name,
+              value: o.default,
             })),
         },
       ]);

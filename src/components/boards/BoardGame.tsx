@@ -79,7 +79,7 @@ function gameResultToOutcome(result: GameResult): Outcome {
 
 type BackendMove = { uci: string; clock: number | null };
 
-function mapBackendMoves(moves: { uci: string; clock: bigint | null }[]): BackendMove[] {
+function mapBackendMoves(moves: { uci: string; clock: number | null }[]): BackendMove[] {
   return moves.map((m) => ({
     uci: m.uci,
     clock: m.clock !== null ? Number(m.clock) : null,

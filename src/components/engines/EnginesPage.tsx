@@ -292,11 +292,11 @@ function EngineSettings({
       );
       for (const field of requiredEngineSettings) {
         if (!settings.find((setting) => setting.name === field)) {
-          const option = options.options.find((option) => option.value.name === field);
+          const option = options.options.find((option) => option.name === field);
           if (option && option.type !== "button") {
             settings.push({
               name: field,
-              value: option.value.default as string | number | boolean | null,
+              value: option.default as string | number | boolean | null,
             });
           }
         }
@@ -311,13 +311,10 @@ function EngineSettings({
     options?.options
       .filter((option) => option.type !== "button")
       .map((option) => {
-        const setting = engine.settings?.find((setting) => setting.name === option.value.name);
+        const setting = engine.settings?.find((setting) => setting.name === option.name);
         return {
           ...option,
-          value: {
-            ...option.value,
-            value: setting?.value !== undefined ? setting.value : option.value.default,
-          },
+          value: setting?.value !== undefined ? setting.value : option.default,
         };
       }) || [];
 
@@ -529,12 +526,12 @@ function EngineSettings({
             .map((o) => {
               return (
                 <Checkbox
-                  key={o.value.name}
-                  label={o.value.name}
-                  checked={!!o.value.value}
-                  disabled={o.value.name === "UCI_Chess960"}
+                  key={o.name}
+                  label={o.name}
+                  checked={String(o.value) === "true"}
+                  disabled={o.name === "UCI_Chess960"}
                   onChange={(e) =>
-                    setSetting(o.value.name, e.currentTarget.checked, o.value.default as boolean)
+                    setSetting(o.name, e.currentTarget.checked, o.default === "true")
                   }
                 />
               );
@@ -551,11 +548,11 @@ function EngineSettings({
               setEngine({
                 ...engine,
                 settings: options?.options
-                  .filter((option) => requiredEngineSettings.includes(option.value.name))
+                  .filter((option) => requiredEngineSettings.includes(option.name))
                   .filter((option) => option.type !== "button")
                   .map((option) => ({
-                    name: option.value.name,
-                    value: option.value.default as string | number | boolean | null,
+                    name: option.name,
+                    value: option.default as string | number | boolean | null,
                   })),
               })
             }

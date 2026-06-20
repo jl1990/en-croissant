@@ -86,7 +86,7 @@ export function getBestMoves(
     tab: string,
     goMode: GoMode,
     options: EngineOptions,
-): Promise<[number, BestMoves[]] | null> {
+): Promise<[number | null, BestMoves[]] | null> {
     return commands
         .getBestMoves(engine.id, engine.path, tab, goMode, options)
         .then((r) => unwrap(r));

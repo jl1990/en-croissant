@@ -94,7 +94,7 @@ function PuzzleDbCard({
               <Text tt="uppercase" c="dimmed" fw={700} size="xs">
                 {t("Common.Size")}
               </Text>
-              <Text size="xs">{formatBytes(puzzleDb.storageSize)}</Text>
+              <Text size="xs">{formatBytes(puzzleDb.storageSize ?? 0)}</Text>
             </Stack>
             <Stack gap={0} align="center">
               <Text tt="uppercase" c="dimmed" fw={700} size="xs">

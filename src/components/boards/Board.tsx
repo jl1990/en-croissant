@@ -136,7 +136,7 @@ function Board({
   const setShapes = useStore(store, (s) => s.setShapes);
   const setFen = useStore(store, (s) => s.setFen);
 
-  const [pos, error] = positionFromFen(currentNode.fen);
+  const [pos, error] = useMemo(() => positionFromFen(currentNode.fen), [currentNode.fen]);
   const [whiteFideOpen, setWhiteFideOpen] = useState(false);
   const [blackFideOpen, setBlackFideOpen] = useState(false);
 
@@ -152,10 +152,14 @@ function Board({
   const showCoordinates = useAtomValue(showCoordinatesAtom);
   const materialDisplay = useAtomValue(materialDisplayAtom);
 
-  let dests: Map<SquareName, SquareName[]> = pos ? chessgroundDests(pos) : new Map();
-  if (forcedEP && pos) {
-    dests = forceEnPassant(dests, pos);
-  }
+  const dests = useMemo(() => {
+    if (!pos) return new Map<SquareName, SquareName[]>();
+    const d = chessgroundDests(pos);
+    if (forcedEP) {
+      return forceEnPassant(d, pos);
+    }
+    return d;
+  }, [pos, forcedEP]);
 
   const [pendingMove, setPendingMove] = useState<NormalMove | null>(null);
 
@@ -185,7 +189,7 @@ function Board({
   const [sessionStats, setSessionStats] = useAtom(practiceSessionStatsAtom);
   const cardStartTime = useAtomValue(practiceCardStartTimeAtom);
 
-  async function makeMove(move: NormalMove) {
+  const makeMove = useCallback(async (move: NormalMove) => {
     if (!pos) return;
     const san = makeSan(pos, move);
     if (practicing) {
@@ -253,86 +257,101 @@ function Board({
         onMove(makeUci(move));
       }
     }
-  }
+  }, [pos, practicing, deck, currentNode, cardStartTime, sessionStats, setPracticeState, setSessionStats, setDeck, goToNext, storeMakeMove, liveClockGameId, onMove, t]);
 
-  let shapes: DrawShape[] = [];
-  if (showArrows && evalOpen && arrows.size > 0 && pos) {
-    const entries = Array.from(arrows.entries()).sort((a, b) => a[0] - b[0]);
-    for (const [i, moves] of entries) {
-      if (i < 4) {
-        const bestWinChance = moves[0].winChance;
-        for (const [j, { pv, winChance }] of moves.entries()) {
-          const posClone = pos.clone();
-          let prevSquare = null;
-          for (const [ii, uci] of pv.entries()) {
-            const m = parseUci(uci)! as NormalMove;
+  const shapes = useMemo(() => {
+    const result: DrawShape[] = [];
+    // Track seen (orig,dest) pairs for O(1) duplicate lookup
+    const seen = new Set<string>();
+    const addIfNew = (s: DrawShape) => {
+      const key = `${s.orig}:${s.dest}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      result.push(s);
+    };
 
-            posClone.play(m);
-            const from = makeSquare(m.from)!;
-            const to = makeSquare(m.to)!;
-            if (prevSquare === null) {
-              prevSquare = from;
-            }
-            const brushSize = match(bestWinChance - winChance)
-              .when(
-                (d) => d < 2.5,
-                () => LARGE_BRUSH,
-              )
-              .when(
-                (d) => d < 5,
-                () => MEDIUM_BRUSH,
-              )
-              .otherwise(() => SMALL_BRUSH);
+    if (showArrows && evalOpen && arrows.size > 0 && pos) {
+      const entries = Array.from(arrows.entries()).sort((a, b) => a[0] - b[0]);
+      for (const [i, moves] of entries) {
+        if (i < 4) {
+          const bestWinChance = moves[0].winChance;
+          for (const [j, { pv, winChance }] of moves.entries()) {
+            const posClone = pos.clone();
+            let prevSquare: string | null = null;
+            for (const [ii, uci] of pv.entries()) {
+              const m = parseUci(uci)! as NormalMove;
 
-            if (ii === 0 || (showConsecutiveArrows && j === 0 && ii % 2 === 0)) {
-              if (
-                ii < 5 && // max 3 arrows
-                !shapes.find((s) => s.orig === from && s.dest === to) &&
-                prevSquare === from
-              ) {
-                shapes.push({
-                  orig: from,
-                  dest: to,
-                  brush: j === 0 ? arrowColors[i].strong : arrowColors[i].pale,
-                  modifiers: {
-                    lineWidth: brushSize,
-                  },
-                });
-                prevSquare = to;
-              } else {
-                break;
+              posClone.play(m);
+              const from = makeSquare(m.from)!;
+              const to = makeSquare(m.to)!;
+              if (prevSquare === null) {
+                prevSquare = from;
+              }
+              const brushSize = match(bestWinChance - winChance)
+                .when(
+                  (d) => d < 2.5,
+                  () => LARGE_BRUSH,
+                )
+                .when(
+                  (d) => d < 5,
+                  () => MEDIUM_BRUSH,
+                )
+                .otherwise(() => SMALL_BRUSH);
+
+              if (ii === 0 || (showConsecutiveArrows && j === 0 && ii % 2 === 0)) {
+                if (
+                  ii < 5 && // max 3 arrows
+                  !seen.has(`${from}:${to}`) &&
+                  prevSquare === from
+                ) {
+                  addIfNew({
+                    orig: from,
+                    dest: to,
+                    brush: j === 0 ? arrowColors[i].strong : arrowColors[i].pale,
+                    modifiers: {
+                      lineWidth: brushSize,
+                    },
+                  });
+                  prevSquare = to;
+                } else {
+                  break;
+                }
               }
             }
           }
         }
       }
     }
-  }
 
-  // Variation arrows: show all children moves when there are alternatives
-  if (showVariationArrows && currentNode.children.length > 1) {
-    for (const child of currentNode.children) {
-      if (child.move) {
-        const m = child.move as NormalMove;
-        const from = makeSquare(m.from);
-        const to = makeSquare(m.to);
-        if (from && to && !shapes.find((s) => s.orig === from && s.dest === to)) {
-          shapes.push({
-            orig: from,
-            dest: to,
-            brush: "variation",
-            modifiers: {
-              lineWidth: MEDIUM_BRUSH,
-            },
-          });
+    // Variation arrows: show all children moves when there are alternatives
+    if (showVariationArrows && currentNode.children.length > 1) {
+      for (const child of currentNode.children) {
+        if (child.move) {
+          const m = child.move as NormalMove;
+          const from = makeSquare(m.from);
+          const to = makeSquare(m.to);
+          if (from && to) {
+            addIfNew({
+              orig: from,
+              dest: to,
+              brush: "variation",
+              modifiers: {
+                lineWidth: MEDIUM_BRUSH,
+              },
+            });
+          }
         }
       }
     }
-  }
 
-  if (currentNode.shapes.length > 0) {
-    shapes = shapes.concat(currentNode.shapes);
-  }
+    if (currentNode.shapes.length > 0) {
+      for (const s of currentNode.shapes) {
+        addIfNew(s);
+      }
+    }
+
+    return result;
+  }, [showArrows, evalOpen, arrows, pos, showConsecutiveArrows, showVariationArrows, currentNode.children, currentNode.shapes]);
 
   const hasClock =
     !!liveClockGameId ||
@@ -382,18 +401,125 @@ function Board({
 
   useHotkeys(keyMap.TOGGLE_EVAL_BAR.keys, () => setEvalOpen((e) => !e));
 
-  const square = match(currentNode)
-    .with({ san: "O-O" }, ({ halfMoves }) => parseSquare(halfMoves % 2 === 1 ? "g1" : "g8"))
-    .with({ san: "O-O-O" }, ({ halfMoves }) => parseSquare(halfMoves % 2 === 1 ? "c1" : "c8"))
-    .otherwise((node) => node.move?.to);
+  const square = useMemo(
+    () =>
+      match(currentNode)
+        .with({ san: "O-O" }, ({ halfMoves }) => parseSquare(halfMoves % 2 === 1 ? "g1" : "g8"))
+        .with({ san: "O-O-O" }, ({ halfMoves }) => parseSquare(halfMoves % 2 === 1 ? "c1" : "c8"))
+        .otherwise((node) => node.move?.to),
+    [currentNode],
+  );
 
-  const lastMove =
-    currentNode.move && square !== undefined
-      ? [chessgroundMove(currentNode.move)[0], makeSquare(square)!]
-      : undefined;
+  const lastMove = useMemo(
+    () =>
+      currentNode.move && square !== undefined
+        ? [chessgroundMove(currentNode.move)[0], makeSquare(square)!]
+        : undefined,
+    [currentNode.move, square],
+  );
 
   const topPlayer = orientation === "white" ? headers.black : headers.white;
   const bottomPlayer = orientation === "white" ? headers.white : headers.black;
+
+  // Memoize Chessground config objects to stabilize references
+  const movableEventsAfter = useCallback(
+    (orig: string, dest: string, metadata: { ctrlKey?: boolean }) => {
+      if (!editingMode && pos) {
+        const from = parseSquare(orig)!;
+        const to = parseSquare(dest)!;
+        if (
+          pos.board.get(from)?.role === "pawn" &&
+          ((dest[1] === "8" && turn === "white") || (dest[1] === "1" && turn === "black"))
+        ) {
+          if (autoPromote && !metadata.ctrlKey) {
+            makeMove({ from, to, promotion: "queen" });
+          } else {
+            setPendingMove({ from, to });
+          }
+        } else {
+          makeMove({ from, to });
+        }
+      }
+    },
+    [editingMode, pos, turn, autoPromote, makeMove],
+  );
+
+  const movableConfig = useMemo(
+    () => ({
+      free: editingMode,
+      color: movableColor,
+      dests:
+        editingMode || viewOnly
+          ? undefined
+          : disableVariations && currentNode.children.length > 0
+            ? undefined
+            : dests,
+      showDests,
+      events: {
+        after: movableEventsAfter,
+      },
+    }),
+    [editingMode, movableColor, viewOnly, disableVariations, currentNode.children.length, dests, showDests, movableEventsAfter],
+  );
+
+  const selectEvent = useCallback(
+    (key: string) => {
+      if (editingMode && selectedPiece) {
+        const square = parseSquare(key);
+        if (square) {
+          const setup = parseFen(currentNode.fen).unwrap();
+          setup.board.set(square, selectedPiece);
+          setFen(makeFen(setup));
+        }
+      }
+    },
+    [editingMode, selectedPiece, currentNode.fen, setFen],
+  );
+
+  const eventsConfig = useMemo(() => ({ select: selectEvent }), [selectEvent]);
+
+  const premovableConfig = useMemo(
+    () => ({
+      enabled: enablePremoves && !editingMode && !viewOnly,
+    }),
+    [enablePremoves, editingMode, viewOnly],
+  );
+
+  const draggableConfig = useMemo(
+    () => ({
+      enabled: true,
+      deleteOnDropOff: editingMode,
+    }),
+    [editingMode],
+  );
+
+  const animationConfig = useMemo(() => ({ enabled: !editingMode }), [editingMode]);
+
+  const drawableOnChange = useCallback(
+    (s: DrawShape[]) => {
+      setShapes(s);
+    },
+    [setShapes],
+  );
+
+  const drawableConfig = useMemo(
+    () => ({
+      enabled: true,
+      visible: true,
+      defaultSnapToValidMove: snapArrows,
+      autoShapes: shapes,
+      brushes: {
+        variation: {
+          key: "v",
+          color: "#9b59b6",
+          opacity: 0.8,
+          lineWidth: 10,
+        },
+      } as unknown as DrawBrushes,
+      onChange: drawableOnChange,
+    }),
+    [snapArrows, shapes, drawableOnChange],
+  );
 
   return (
     <>
@@ -525,93 +651,17 @@ function Board({
                 setBoardFen={setBoardFen}
                 orientation={orientation}
                 fen={currentNode.fen}
-                animation={{ enabled: !editingMode }}
+                animation={animationConfig}
                 coordinates={showCoordinates !== "no"}
                 coordinatesOnSquares={showCoordinates === "all"}
-                movable={{
-                  free: editingMode,
-                  color: movableColor,
-                  dests:
-                    editingMode || viewOnly
-                      ? undefined
-                      : disableVariations && currentNode.children.length > 0
-                        ? undefined
-                        : dests,
-                  showDests,
-                  events: {
-                    after(orig, dest, metadata) {
-                      if (!editingMode) {
-                        const from = parseSquare(orig)!;
-                        const to = parseSquare(dest)!;
-
-                        if (pos) {
-                          if (
-                            pos.board.get(from)?.role === "pawn" &&
-                            ((dest[1] === "8" && turn === "white") ||
-                              (dest[1] === "1" && turn === "black"))
-                          ) {
-                            if (autoPromote && !metadata.ctrlKey) {
-                              makeMove({
-                                from,
-                                to,
-                                promotion: "queen",
-                              });
-                            } else {
-                              setPendingMove({
-                                from,
-                                to,
-                              });
-                            }
-                          } else {
-                            makeMove({
-                              from,
-                              to,
-                            });
-                          }
-                        }
-                      }
-                    },
-                  },
-                }}
-                events={{
-                  select: (key) => {
-                    if (editingMode && selectedPiece) {
-                      const square = parseSquare(key);
-                      if (square) {
-                        const setup = parseFen(currentNode.fen).unwrap();
-                        setup.board.set(square, selectedPiece);
-                        setFen(makeFen(setup));
-                      }
-                    }
-                  },
-                }}
+                movable={movableConfig}
+                events={eventsConfig}
                 turnColor={turn}
                 check={moveHighlight && pos?.isCheck()}
                 lastMove={moveHighlight && !editingMode ? lastMove : undefined}
-                premovable={{
-                  enabled: enablePremoves && !editingMode && !viewOnly,
-                }}
-                draggable={{
-                  enabled: true,
-                  deleteOnDropOff: editingMode,
-                }}
-                drawable={{
-                  enabled: true,
-                  visible: true,
-                  defaultSnapToValidMove: snapArrows,
-                  autoShapes: shapes,
-                  brushes: {
-                    variation: {
-                      key: "v",
-                      color: "#9b59b6",
-                      opacity: 0.8,
-                      lineWidth: 10,
-                    },
-                  } as unknown as DrawBrushes,
-                  onChange: (shapes) => {
-                    setShapes(shapes);
-                  },
-                }}
+                premovable={premovableConfig}
+                draggable={draggableConfig}
+                drawable={drawableConfig}
               />
             </Box>
           </Group>

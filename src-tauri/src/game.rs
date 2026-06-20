@@ -50,8 +50,8 @@ pub enum PlayerConfig {
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TimeControl {
-    pub initial_time: u64,
-    pub increment: u64,
+    pub initial_time: i32,
+    pub increment: i32,
 }
 
 #[derive(Clone, Debug, Deserialize, Type)]
@@ -72,10 +72,10 @@ pub struct GameConfig {
 pub struct OpeningBookConfig {
     pub path: String,
     #[serde(default = "default_opening_book_max_ply")]
-    pub max_ply: usize,
+    pub max_ply: i32,
 }
 
-fn default_opening_book_max_ply() -> usize {
+fn default_opening_book_max_ply() -> i32 {
     40
 }
 
@@ -119,9 +119,9 @@ pub struct GameMove {
     pub uci: String,
     pub san: String,
     pub fen_after: String,
-    pub clock: Option<u64>,
-    pub white_time: Option<u64>,
-    pub black_time: Option<u64>,
+    pub clock: Option<i32>,
+    pub white_time: Option<i32>,
+    pub black_time: Option<i32>,
 }
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -134,8 +134,8 @@ pub struct GameState {
     pub current_fen: String,
     pub ply: u32,
     pub turn: String,
-    pub white_time: Option<u64>,
-    pub black_time: Option<u64>,
+    pub white_time: Option<i32>,
+    pub black_time: Option<i32>,
     pub white_player: String,
     pub black_player: String,
 }
@@ -146,16 +146,16 @@ pub struct GameMoveEvent {
     pub game_id: GameId,
     pub moves: Vec<GameMove>,
     pub fen: String,
-    pub white_time: Option<u64>,
-    pub black_time: Option<u64>,
+    pub white_time: Option<i32>,
+    pub black_time: Option<i32>,
 }
 
 #[derive(Clone, Debug, Serialize, Type, Event)]
 #[serde(rename_all = "camelCase")]
 pub struct ClockUpdateEvent {
     pub game_id: GameId,
-    pub white_time: Option<u64>,
-    pub black_time: Option<u64>,
+    pub white_time: Option<i32>,
+    pub black_time: Option<i32>,
 }
 
 #[derive(Clone, Debug, Serialize, Type, Event)]
@@ -167,10 +167,10 @@ pub struct GameOverEvent {
 }
 
 struct ClockState {
-    white_time: Option<u64>,
-    black_time: Option<u64>,
-    white_increment: u64,
-    black_increment: u64,
+    white_time: Option<i32>,
+    black_time: Option<i32>,
+    white_increment: i32,
+    black_increment: i32,
     last_tick: Instant,
 }
 
@@ -189,7 +189,7 @@ struct GameController {
     move_notify_tx: Option<tokio::sync::mpsc::Sender<()>>,
     engine_thinking: bool,
     polyglot_book: Option<PolyglotBook>,
-    polyglot_max_ply: usize,
+    polyglot_max_ply: i32,
 }
 
 impl GameController {
@@ -327,7 +327,7 @@ impl GameController {
         *self.position_history.entry(pos_key).or_insert(0) += 1;
 
         if let Some(ref mut clock_state) = self.clock {
-            let elapsed = clock_state.last_tick.elapsed().as_millis() as u64;
+            let elapsed = clock_state.last_tick.elapsed().as_millis() as i32;
 
             if self.position.turn() == Color::Black {
                 if let Some(ref mut wt) = clock_state.white_time {
@@ -495,18 +495,18 @@ impl GameController {
 
     fn check_timeout(&mut self) -> Option<GameResult> {
         if let Some(ref clock) = self.clock {
-            let elapsed = clock.last_tick.elapsed().as_millis() as u64;
+            let elapsed = clock.last_tick.elapsed().as_millis() as i32;
 
             if self.position.turn() == Color::White {
                 if let Some(wt) = clock.white_time {
-                    if wt.saturating_sub(elapsed) == 0 {
+                    if wt.saturating_sub(elapsed) <= 0 {
                         return Some(GameResult::BlackWins {
                             reason: GameEndReason::Timeout,
                         });
                     }
                 }
             } else if let Some(bt) = clock.black_time {
-                if bt.saturating_sub(elapsed) == 0 {
+                if bt.saturating_sub(elapsed) <= 0 {
                     return Some(GameResult::WhiteWins {
                         reason: GameEndReason::Timeout,
                     });
@@ -516,9 +516,9 @@ impl GameController {
         None
     }
 
-    fn get_current_times(&self) -> (Option<u64>, Option<u64>) {
+    fn get_current_times(&self) -> (Option<i32>, Option<i32>) {
         if let Some(ref clock) = self.clock {
-            let elapsed = clock.last_tick.elapsed().as_millis() as u64;
+            let elapsed = clock.last_tick.elapsed().as_millis() as i32;
 
             let white_time = if self.position.turn() == Color::White {
                 clock.white_time.map(|t| t.saturating_sub(elapsed))
@@ -860,7 +860,7 @@ struct OpeningBookSelection {
 struct OpeningBookResult {
     config: GameConfig,
     polyglot_book: Option<PolyglotBook>,
-    polyglot_max_ply: usize,
+    polyglot_max_ply: i32,
 }
 
 fn select_random_epd_entry(reader: impl BufRead) -> Result<OpeningBookSelection, Error> {
@@ -1354,7 +1354,7 @@ async fn game_loop(
 fn try_polyglot_book_move(controller: &GameController) -> Option<String> {
     let book = controller.polyglot_book.as_ref()?;
 
-    if controller.moves.len() >= controller.polyglot_max_ply {
+    if controller.moves.len() >= controller.polyglot_max_ply as usize {
         return None;
     }
 
@@ -1471,8 +1471,8 @@ async fn request_engine_move(
                 .map(|c| (c.white_increment as u32, c.black_increment as u32))
                 .unwrap_or((0, 0));
 
-            let wt = white_time.unwrap_or(u64::MAX) as u32;
-            let bt = black_time.unwrap_or(u64::MAX) as u32;
+            let wt = white_time.unwrap_or(i32::MAX).max(0) as u32;
+            let bt = black_time.unwrap_or(i32::MAX).max(0) as u32;
             GoMode::PlayersTime(PlayersTime::new(wt, bt, winc, binc))
         } else {
             go.unwrap_or(GoMode::Depth(20))

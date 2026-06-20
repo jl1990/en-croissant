@@ -773,9 +773,81 @@ mod tests {
 }
 
 #[derive(Type, Default, Serialize, Debug)]
+pub struct ExportEngineOption {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub option_type: String,
+    pub value: Option<String>,
+    pub default: Option<String>,
+    pub min: Option<String>,
+    pub max: Option<String>,
+    pub var: Vec<String>,
+}
+
+#[derive(Type, Default, Serialize, Debug)]
 pub struct EngineConfig {
     pub name: String,
-    pub options: Vec<UciOptionConfig>,
+    pub options: Vec<ExportEngineOption>,
+}
+
+fn map_uci_option(opt: &UciOptionConfig) -> ExportEngineOption {
+    use UciOptionConfig::*;
+    match opt {
+        Check { name, default } => ExportEngineOption {
+            name: name.clone(),
+            option_type: "check".to_string(),
+            value: default.map(|v| v.to_string()),
+            default: default.map(|v| v.to_string()),
+            min: None,
+            max: None,
+            var: vec![],
+        },
+        Spin {
+            name,
+            default,
+            min,
+            max,
+        } => ExportEngineOption {
+            name: name.clone(),
+            option_type: "spin".to_string(),
+            value: default.map(|v| v.to_string()),
+            default: default.map(|v| v.to_string()),
+            min: min.map(|v| v.to_string()),
+            max: max.map(|v| v.to_string()),
+            var: vec![],
+        },
+        Combo {
+            name,
+            default,
+            var,
+        } => ExportEngineOption {
+            name: name.clone(),
+            option_type: "combo".to_string(),
+            value: default.clone(),
+            default: default.clone(),
+            min: None,
+            max: None,
+            var: var.clone(),
+        },
+        Button { name } => ExportEngineOption {
+            name: name.clone(),
+            option_type: "button".to_string(),
+            value: None,
+            default: None,
+            min: None,
+            max: None,
+            var: vec![],
+        },
+        String { name, default } => ExportEngineOption {
+            name: name.clone(),
+            option_type: "string".to_string(),
+            value: default.clone(),
+            default: default.clone(),
+            min: None,
+            max: None,
+            var: vec![],
+        },
+    }
 }
 
 #[tauri::command]
@@ -797,7 +869,7 @@ pub async fn get_engine_config(path: PathBuf) -> Result<EngineConfig, Error> {
             config.name = name;
         }
         if let UciMessage::Option(opt) = parse_one(&line) {
-            config.options.push(opt);
+            config.options.push(map_uci_option(&opt));
         }
         if let UciMessage::UciOk = parse_one(&line) {
             break;

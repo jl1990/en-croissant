@@ -4,7 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { match } from "ts-pattern";
-import { commands, type UciOptionConfig } from "@/bindings";
+import { commands, type ExportEngineOption } from "@/bindings";
 import { type LocalEngine, requiredEngineSettings } from "@/utils/engines";
 import { usePlatform } from "@/utils/files";
 import { unwrap } from "@/utils/unwrap";
@@ -22,13 +22,13 @@ export default function EngineForm({
   const { t } = useTranslation();
 
   const { os } = usePlatform();
-  const config = useRef<{ name: string; options: UciOptionConfig[] } | null>(null);
+  const config = useRef<{ name: string; options: ExportEngineOption[] } | null>(null);
   const settings = config.current?.options
-    .filter((o) => requiredEngineSettings.includes(o.value.name))
+    .filter((o) => requiredEngineSettings.includes(o.name))
     .filter((o) => o.type !== "button")
     .map((o) => ({
-      name: o.value.name,
-      value: o.value.default as string | number | boolean,
+      name: o.name,
+      value: o.default as string | number | boolean,
     }));
 
   const filters = match(os)

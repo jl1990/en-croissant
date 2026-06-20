@@ -156,7 +156,7 @@ function EngineListener({
             }
             return newMap;
           });
-          setProgress(payload.progress);
+          if (payload.progress !== null) setProgress(payload.progress);
           const shouldSetScore =
             firstEngineWithLines === engine.id || firstEngineWithLines === null;
           if (shouldSetScore) {
@@ -219,7 +219,7 @@ function EngineListener({
                 newMap.set(`${searchingFen}:${searchingMoves.join(",")}`, bestMoves);
                 return newMap;
               });
-              setProgress(progress);
+              setProgress(progress ?? 0);
             }
           });
         }
