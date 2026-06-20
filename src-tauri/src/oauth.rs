@@ -108,14 +108,18 @@ async fn authorize(
     "authorized".to_string()
 }
 
-async fn run_server(handle: tauri::AppHandle) -> Result<(), axum::Error> {
+async fn run_server(handle: tauri::AppHandle) -> Result<(), crate::error::Error> {
     let app = Router::new()
         .route("/callback", get(authorize))
         .layer(Extension(handle.clone()));
 
-    let _ = axum::Server::bind(&handle.state::<AppState>().auth.socket_addr.clone())
-        .serve(app.into_make_service())
-        .await;
+    let addr = handle.state::<AppState>().auth.socket_addr.clone();
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(|e| crate::error::Error::Io(Box::new(e)))?;
+    axum::serve(listener, app.into_make_service())
+        .await
+        .map_err(|e| crate::error::Error::Io(Box::new(e)))?;
 
     Ok(())
 }

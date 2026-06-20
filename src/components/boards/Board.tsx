@@ -15,11 +15,12 @@ import { chessgroundDests, chessgroundMove } from "chessops/compat";
 import { makeFen, parseFen } from "chessops/fen";
 import { makeSan } from "chessops/san";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { memo, useCallback, useContext, useMemo, useState } from "react";
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
+import { clockStore } from "@/state/clockStore";
 import { useShallow } from "zustand/react/shallow";
 import { Chessground, type ChessgroundRef } from "@/chessground/Chessground";
 import {
@@ -45,6 +46,7 @@ import {
   showVariationArrowsAtom,
   snapArrowsAtom,
 } from "@/state/atoms";
+
 import { keyMapAtom } from "@/state/keybinds";
 import classes from "@/styles/Chessboard.module.css";
 import { ANNOTATION_INFO, isBasicAnnotation } from "@/utils/annotation";
@@ -53,6 +55,7 @@ import { chessopsError, forceEnPassant, positionFromFen } from "@/utils/chessops
 import { getTabFile, getTabGameNumber } from "@/utils/tabs";
 import ShowMaterial from "../common/ShowMaterial";
 import { TreeStateContext } from "../common/TreeStateContext";
+import { useRenderTiming } from "@/utils/performance";
 import FideInfo from "../databases/FideInfo";
 import { updateCardPerformance } from "../files/opening";
 import { arrowColors } from "../panels/analysis/BestMoves";
@@ -74,13 +77,12 @@ interface ChessboardProps {
   disableVariations?: boolean;
   movable?: "both" | "white" | "black" | "turn" | "none";
   boardRef: React.MutableRefObject<HTMLDivElement | null>;
-  whiteTime?: number;
-  blackTime?: number;
   practicing?: boolean;
   selectedPiece?: Piece | null;
   onMove?: (uci: string) => void;
   cgRef?: React.Ref<ChessgroundRef>;
   enablePremoves?: boolean;
+  liveClockGameId?: string;
 }
 
 function Board({
@@ -89,17 +91,26 @@ function Board({
   disableVariations,
   movable = "turn",
   boardRef,
-  whiteTime,
-  blackTime,
   practicing,
   selectedPiece,
   onMove,
   cgRef,
   enablePremoves = false,
+  liveClockGameId,
 }: ChessboardProps) {
+  useRenderTiming("Board");
   const { t } = useTranslation();
 
   const store = useContext(TreeStateContext)!;
+  const clockStoreRef = useRef(clockStore.getState());
+
+  // Sync clock state to ref without triggering re-renders
+  useEffect(() => {
+    const unsub = clockStore.subscribe((s) => {
+      clockStoreRef.current = s;
+    });
+    return unsub;
+  }, []);
 
   const root = useStore(store, (s) => s.root);
   const rootFen = useStore(store, (s) => s.root.fen);
@@ -224,9 +235,17 @@ function Board({
         });
       }
     } else {
+      const gameTimes = liveClockGameId
+        ? clockStoreRef.current.timesByGameId[liveClockGameId]
+        : undefined;
+      const clockTimeForMove = gameTimes
+        ? pos.turn === "white"
+          ? gameTimes.whiteTime ?? undefined
+          : gameTimes.blackTime ?? undefined
+        : undefined;
       storeMakeMove({
         payload: move,
-        clock: pos.turn === "white" ? whiteTime : blackTime,
+        clock: clockTimeForMove,
       });
       setPendingMove(null);
 
@@ -316,8 +335,7 @@ function Board({
   }
 
   const hasClock =
-    !!whiteTime ||
-    !!blackTime ||
+    !!liveClockGameId ||
     !!headers.time_control ||
     !!headers.white_time_control ||
     !!headers.black_time_control;
@@ -415,8 +433,7 @@ function Board({
               <Clock
                 color={orientation === "black" ? "white" : "black"}
                 turn={turn}
-                whiteTime={whiteTime}
-                blackTime={blackTime}
+                liveClockGameId={liveClockGameId}
               />
             )}
           </BoardBar>
@@ -620,7 +637,7 @@ function Board({
 
             <ShowMaterial fen={currentNode.fen} color={orientation} mode={materialDisplay} />
             {hasClock && (
-              <Clock color={orientation} turn={turn} whiteTime={whiteTime} blackTime={blackTime} />
+              <Clock color={orientation} turn={turn} liveClockGameId={liveClockGameId} />
             )}
           </BoardBar>
         </Box>

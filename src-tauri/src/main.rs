@@ -31,8 +31,7 @@ use progress::{clear_progress, get_progress, ProgressEvent, ProgressStore};
 use log::LevelFilter;
 use oauth::AuthState;
 #[cfg(debug_assertions)]
-use specta_typescript::{BigIntExportBehavior, Typescript};
-use sysinfo::SystemExt;
+use specta_typescript::Typescript;
 use tauri::{Manager, Window};
 use tauri_plugin_log::{Target, TargetKind};
 
@@ -182,7 +181,7 @@ fn main() {
     #[cfg(debug_assertions)]
     specta_builder
         .export(
-            Typescript::default().bigint(BigIntExportBehavior::BigInt),
+            Typescript::default(),
             "../src/bindings/generated.ts",
         )
         .expect("Failed to export types");

@@ -266,7 +266,7 @@ export default function BoardsPage() {
 
 type ViewId = "left" | "topRight" | "bottomRight";
 
-const fullLayout: { [viewId: string]: ReactNode } = {
+const fullLayout: Record<string, ReactNode> = {
   left: <div id="left" />,
   topRight: <div id="topRight" />,
   bottomRight: <div id="bottomRight" />,
@@ -278,13 +278,16 @@ interface WindowsState {
 
 const windowsStateAtom = atomWithStorage<WindowsState>("windowsState", {
   currentNode: {
+    type: "split",
     direction: "row",
-    first: "left",
-    second: {
-      direction: "column",
-      first: "topRight",
-      second: "bottomRight",
-    },
+    children: [
+      "left",
+      {
+        type: "split",
+        direction: "column",
+        children: ["topRight", "bottomRight"],
+      },
+    ],
   },
 });
 
@@ -308,7 +311,7 @@ function TabSwitch({
     .with("play", () => (
       <TreeStateProvider id={tab.value}>
         <Mosaic<ViewId>
-          renderTile={(id) => fullLayout[id]}
+          renderTile={(id: ViewId) => <>{fullLayout[id]}</>}
           value={windowsState.currentNode}
           onChange={(currentNode) => setWindowsState({ currentNode })}
           resize={{ minimumPaneSizePercentage: 0 }}
@@ -319,7 +322,7 @@ function TabSwitch({
     .with("analysis", () => (
       <TreeStateProvider id={tab.value}>
         <Mosaic<ViewId>
-          renderTile={(id) => fullLayout[id]}
+          renderTile={(id: ViewId) => <>{fullLayout[id]}</>}
           value={windowsState.currentNode}
           onChange={(currentNode) => setWindowsState({ currentNode })}
           resize={{ minimumPaneSizePercentage: 0 }}
@@ -335,7 +338,7 @@ function TabSwitch({
     .with("puzzles", () => (
       <TreeStateProvider id={tab.value}>
         <Mosaic<ViewId>
-          renderTile={(id) => fullLayout[id]}
+          renderTile={(id: ViewId) => <>{fullLayout[id]}</>}
           value={windowsState.currentNode}
           onChange={(currentNode) => setWindowsState({ currentNode })}
           resize={{ minimumPaneSizePercentage: 0 }}

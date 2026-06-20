@@ -55,6 +55,7 @@ import {
   gameSameTimeControlAtom,
   tabsAtom,
 } from "@/state/atoms";
+import { clockStore } from "@/state/clockStore";
 import { positionFromFen } from "@/utils/chessops";
 import type { GameHeaders } from "@/utils/treeReducer";
 import { unwrap } from "@/utils/unwrap";
@@ -63,6 +64,7 @@ import FileInput from "../common/FileInput";
 import GameInfo from "../common/GameInfo";
 import GameNotation from "../common/GameNotation";
 import MoveControls from "../common/MoveControls";
+import { useRenderTiming } from "@/utils/performance";
 import { TreeStateContext } from "../common/TreeStateContext";
 import Board from "./Board";
 import BoardControls from "./BoardControls";
@@ -85,6 +87,7 @@ function mapBackendMoves(moves: { uci: string; clock: bigint | null }[]): Backen
 }
 
 function BoardGame() {
+  useRenderTiming("BoardGame");
   const { t } = useTranslation();
   const activeTab = useAtomValue(activeTabAtom);
 
@@ -135,8 +138,6 @@ function BoardGame() {
   const [gameState, setGameState] = useAtom(currentGameStateAtom);
   const [players, setPlayers] = useAtom(currentPlayersAtom);
 
-  const [whiteTime, setWhiteTime] = useState<number | null>(null);
-  const [blackTime, setBlackTime] = useState<number | null>(null);
   const [gameId, setGameId] = useAtom(currentGameIdAtom);
 
   const [logsOpened, toggleLogsOpened] = useToggle();
@@ -181,10 +182,22 @@ function BoardGame() {
     }
   }, [logsOpened, fetchEngineLogs]);
 
+  /**
+   * Sync tree with backend moves efficiently by tracking the last-synced count.
+   * Uses lazy reads from the tree store (via ref) to avoid full recomputation
+   * when the callback itself doesn't change.
+   */
+  const lastSyncedCountRef = useRef(0);
+  const rootRef = useRef(root);
+  rootRef.current = root;
+
   const syncTreeWithMoves = useCallback(
     (backendMoves: BackendMove[]) => {
+      const currentRoot = rootRef.current;
+
+      // Fast scan mainline from root to get current tree UCI list
       const treeMoves: string[] = [];
-      let node = root;
+      let node = currentRoot;
       while (node.children.length > 0) {
         node = node.children[0];
         if (node.move) {
@@ -192,16 +205,25 @@ function BoardGame() {
         }
       }
 
-      let needsReset = false;
-      for (let i = 0; i < treeMoves.length; i++) {
-        if (i >= backendMoves.length || treeMoves[i] !== backendMoves[i].uci) {
-          needsReset = true;
-          break;
-        }
+      const treeLen = treeMoves.length;
+
+      // Find longest common prefix between tree and backend
+      let prefixLen = 0;
+      const maxLen = Math.min(treeLen, backendMoves.length);
+      while (prefixLen < maxLen && treeMoves[prefixLen] === backendMoves[prefixLen].uci) {
+        prefixLen++;
       }
 
-      if (needsReset) {
-        setFen(root.fen);
+      // If tree already matches backend exactly, nothing to do
+      if (prefixLen === treeLen && treeLen === backendMoves.length) {
+        lastSyncedCountRef.current = treeLen;
+        return false;
+      }
+
+      // Backend is shorter than tree (takeback) or moves diverged — replay from root
+      if (backendMoves.length <= treeLen || prefixLen < treeLen) {
+        setFen(currentRoot.fen);
+        lastSyncedCountRef.current = 0;
         for (const move of backendMoves) {
           const parsed = parseUci(move.uci);
           if (parsed) {
@@ -211,26 +233,26 @@ function BoardGame() {
             });
           }
         }
+        lastSyncedCountRef.current = backendMoves.length;
         return true;
       }
 
-      if (backendMoves.length > treeMoves.length) {
-        for (let i = treeMoves.length; i < backendMoves.length; i++) {
-          const move = backendMoves[i];
-          const parsed = parseUci(move.uci);
-          if (parsed) {
-            appendMove({
-              payload: parsed,
-              clock: move.clock !== null ? Number(move.clock) : undefined,
-            });
-          }
+      // Backend has new moves — append from the end of the tree
+      for (let i = treeLen; i < backendMoves.length; i++) {
+        const move = backendMoves[i];
+        const parsed = parseUci(move.uci);
+        if (parsed) {
+          appendMove({
+            payload: parsed,
+            clock: move.clock !== null ? Number(move.clock) : undefined,
+          });
         }
-        return true;
       }
 
-      return false;
+      lastSyncedCountRef.current = backendMoves.length;
+      return true;
     },
-    [root, setFen, appendMove],
+    [setFen, appendMove],
   );
 
   function changeToAnalysisMode() {
@@ -321,8 +343,11 @@ function BoardGame() {
       const result = await commands.startGame(newGameId, config);
       const state = unwrap(result);
 
-      setWhiteTime(state.whiteTime !== null ? Number(state.whiteTime) : null);
-      setBlackTime(state.blackTime !== null ? Number(state.blackTime) : null);
+      clockStore.getState().setTimes(
+        newGameId,
+        state.whiteTime !== null ? Number(state.whiteTime) : null,
+        state.blackTime !== null ? Number(state.blackTime) : null,
+      );
 
       setGameState("playing");
 
@@ -420,6 +445,7 @@ function BoardGame() {
   const pendingTimesRef = useRef<{
     white: number | null;
     black: number | null;
+    gid?: string;
   } | null>(null);
   const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const THROTTLE_MS = 150;
@@ -433,8 +459,8 @@ function BoardGame() {
       pendingMovesRef.current = null;
     }
     if (pendingTimesRef.current) {
-      setWhiteTime(pendingTimesRef.current.white);
-      setBlackTime(pendingTimesRef.current.black);
+      const pt = pendingTimesRef.current;
+      clockStore.getState().setTimes(pt.gid!, pt.white, pt.black);
       pendingTimesRef.current = null;
     }
     throttleTimerRef.current = null;
@@ -459,26 +485,31 @@ function BoardGame() {
     if (gameState !== "playing" || !gameId) return;
 
     const currentGameId = gameId;
+    let disposed = false;
 
     const unlistenMove = events.gameMoveEvent.listen(({ payload }) => {
-      if (payload.gameId !== currentGameId) return;
+      if (disposed || payload.gameId !== currentGameId) return;
 
       pendingMovesRef.current = mapBackendMoves(payload.moves);
       pendingTimesRef.current = {
         white: payload.whiteTime !== null ? Number(payload.whiteTime) : null,
         black: payload.blackTime !== null ? Number(payload.blackTime) : null,
+        gid: currentGameId,
       };
       scheduleUpdate();
     });
 
     const unlistenClock = events.clockUpdateEvent.listen(({ payload }) => {
-      if (payload.gameId !== currentGameId) return;
-      setWhiteTime(payload.whiteTime !== null ? Number(payload.whiteTime) : null);
-      setBlackTime(payload.blackTime !== null ? Number(payload.blackTime) : null);
+      if (disposed || payload.gameId !== currentGameId) return;
+      clockStore.getState().setTimes(
+        currentGameId,
+        payload.whiteTime !== null ? Number(payload.whiteTime) : null,
+        payload.blackTime !== null ? Number(payload.blackTime) : null,
+      );
     });
 
     const unlistenGameOver = events.gameOverEvent.listen(({ payload }) => {
-      if (payload.gameId !== currentGameId) return;
+      if (disposed || payload.gameId !== currentGameId) return;
 
       if (throttleTimerRef.current) {
         clearTimeout(throttleTimerRef.current);
@@ -494,10 +525,14 @@ function BoardGame() {
     });
 
     return () => {
+      disposed = true;
       if (throttleTimerRef.current) {
         clearTimeout(throttleTimerRef.current);
         throttleTimerRef.current = null;
       }
+      pendingMovesRef.current = null;
+      pendingTimesRef.current = null;
+      clockStore.getState().clearGame(currentGameId);
       unlistenMove.then((f) => f());
       unlistenClock.then((f) => f());
       unlistenGameOver.then((f) => f());
@@ -505,25 +540,35 @@ function BoardGame() {
   }, [gameId, gameState, scheduleUpdate, setGameState, setResult]);
 
   useEffect(() => {
-    if (gameState === "playing" && gameId) {
-      commands.getGameState(gameId).then((result) => {
-        if (result.status === "ok") {
-          const state = result.data;
+    if (gameState !== "playing" || !gameId) return;
+    const currentGameId = gameId;
+    let disposed = false;
 
-          syncTreeWithMovesRef.current(mapBackendMoves(state.moves));
+    commands.getGameState(currentGameId).then((result) => {
+      if (disposed) return;
+      if (result.status === "ok") {
+        const state = result.data;
 
-          setWhiteTime(state.whiteTime !== null ? Number(state.whiteTime) : null);
-          setBlackTime(state.blackTime !== null ? Number(state.blackTime) : null);
+        syncTreeWithMovesRef.current(mapBackendMoves(state.moves));
 
-          if (state.status !== "playing") {
-            setGameState("gameOver");
-            if (typeof state.status === "object" && "finished" in state.status) {
-              setResult(gameResultToOutcome(state.status.finished.result));
-            }
+        clockStore.getState().setTimes(
+          currentGameId,
+          state.whiteTime !== null ? Number(state.whiteTime) : null,
+          state.blackTime !== null ? Number(state.blackTime) : null,
+        );
+
+        if (state.status !== "playing") {
+          setGameState("gameOver");
+          if (typeof state.status === "object" && "finished" in state.status) {
+            setResult(gameResultToOutcome(state.status.finished.result));
           }
         }
-      });
-    }
+      }
+    });
+
+    return () => {
+      disposed = true;
+    };
   }, [gameId, gameState, setGameState, setResult]);
 
   const movable = useMemo(() => {
@@ -565,10 +610,9 @@ function BoardGame() {
   }
 
   async function handleNewGame() {
+    if (gameId) clockStore.getState().clearGame(gameId);
     setGameId(null);
     setGameState("settingUp");
-    setWhiteTime(null);
-    setBlackTime(null);
     resetTree();
   }
 
@@ -597,12 +641,11 @@ function BoardGame() {
           disableVariations
           boardRef={boardRef}
           movable={gameState === "settingUp" && editingMode ? "none" : movable}
-          whiteTime={gameState === "playing" ? (whiteTime ?? undefined) : undefined}
-          blackTime={gameState === "playing" ? (blackTime ?? undefined) : undefined}
           onMove={handleHumanMove}
           selectedPiece={selectedPiece}
           cgRef={cgRef}
           enablePremoves={isPlayerVsEngine && gameState === "playing"}
+          liveClockGameId={gameState === "playing" && gameId ? gameId : undefined}
         />
       </Portal>
       <Portal target="#topRight" style={{ height: "100%", overflow: "hidden" }}>

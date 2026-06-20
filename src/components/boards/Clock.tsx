@@ -2,6 +2,7 @@ import { Paper, Progress, Text } from "@mantine/core";
 import { useContext } from "react";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
+import { useClockStore } from "@/state/clockStore";
 import { positionFromFen } from "@/utils/chessops";
 import { getClockInfo } from "@/utils/clock";
 import { TreeStateContext } from "../common/TreeStateContext";
@@ -10,14 +11,17 @@ import classes from "./Clock.module.css";
 function Clock({
   color,
   turn,
-  whiteTime,
-  blackTime,
+  liveClockGameId,
 }: {
   color: "white" | "black";
   turn: "white" | "black";
-  whiteTime?: number;
-  blackTime?: number;
+  liveClockGameId?: string;
 }) {
+  const liveTimes = useClockStore((s) =>
+    liveClockGameId ? s.timesByGameId[liveClockGameId] : undefined,
+  );
+  const whiteTime = liveTimes?.whiteTime ?? undefined;
+  const blackTime = liveTimes?.blackTime ?? undefined;
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
   const position = useStore(store, (s) => s.position);

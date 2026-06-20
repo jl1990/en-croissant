@@ -1,7 +1,7 @@
 import type { MantineColor } from "@mantine/core";
 import { resolve } from "@tauri-apps/api/path";
 import { exists, mkdir, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
-import { parseUci } from "chessops";
+import { type Color, parseUci } from "chessops";
 import { INITIAL_FEN, makeFen } from "chessops/fen";
 import equal from "fast-deep-equal";
 import { atom, type PrimitiveAtom } from "jotai";
@@ -33,15 +33,15 @@ import { getEnginesDir } from "../utils/directories";
 import type { Session } from "../utils/session";
 import { createAsyncZodStorage, createZodStorage } from "./utils";
 
-const zodArray = <Input, Output>(itemSchema: z.ZodType<Output, z.ZodTypeDef, Input>) => {
+const zodArray = <Output>(itemSchema: z.ZodType<Output>) => {
     const catchValue = {} as never;
 
     const res = z
-        .array(itemSchema.catch(catchValue))
-        .transform((a) => a.filter((o): o is Output => o !== catchValue))
+        .array(itemSchema.catch(catchValue as Output))
+        .transform((a: (Output | never)[]) => a.filter((o): o is Output => o !== catchValue))
         .catch([]);
 
-    return res as z.ZodType<Output[], z.ZodTypeDef, Input[]>;
+    return res as unknown as z.ZodType<Output[]>;
 };
 
 // Tabs
@@ -552,6 +552,20 @@ export const engineProgressFamily = atomFamily(
     (a, b) => a.tab === b.tab && a.engine === b.engine,
 );
 
+// Compute final FEN/swapFEN once for all engines, then reuse.
+export function computeEngineKeys(fen: string, gameMoves: string[]): [string, string, Color | null] {
+    const [pos] = positionFromFen(fen);
+    if (!pos) return [fen, `${fen}:${gameMoves.join(",")}`, null];
+    if (pos.isEnd()) return [fen, gameMoves.length > 0 ? `${fen}:${gameMoves.join(",")}` : fen, pos.turn];
+    for (const move of gameMoves) {
+        const m = parseUci(move);
+        if (!m) break;
+        pos.play(m);
+    }
+    const finalFen = makeFen(pos.toSetup());
+    return [swapMove(finalFen), `${fen}:${gameMoves.join(",")}`, pos.turn];
+}
+
 // returns the best moves of each engine for the current position
 export const bestMovesFamily = atomFamily(
     ({ fen, gameMoves }: { fen: string; gameMoves: string[] }) =>
@@ -560,31 +574,23 @@ export const bestMovesFamily = atomFamily(
             if (!tab) return new Map();
             const engines = get(enginesAtom);
             if (!engines) return new Map();
+
+            const [swapKey, fullKey, turn] = computeEngineKeys(fen, gameMoves);
+
             const bestMoves = new Map<number, { pv: string[]; winChance: number }[]>();
             let n = 0;
             for (const engine of engines.filter((e) => e.loaded)) {
                 const engineMoves = get(engineMovesFamily({ tab, engine: engine.id }));
-                const [pos] = positionFromFen(fen);
-                let finalFen = INITIAL_FEN;
-                if (pos) {
-                    for (const move of gameMoves) {
-                        const m = parseUci(move);
-                        pos.play(m!);
-                    }
-                    finalFen = makeFen(pos.toSetup());
-                }
-                const moves =
-                    engineMoves.get(`${swapMove(finalFen)}:`) ||
-                    engineMoves.get(`${fen}:${gameMoves.join(",")}`);
+                const moves = engineMoves.get(`${swapKey}:`) || engineMoves.get(fullKey);
                 if (moves && moves.length > 0) {
                     const bestWinChange = getWinChance(
-                        normalizeScore(moves[0].score.value, pos?.turn || "white"),
+                        normalizeScore(moves[0].score.value, turn || "white"),
                     );
                     bestMoves.set(
                         n,
                         moves.reduce<{ pv: string[]; winChance: number }[]>((acc, m) => {
                             const winChance = getWinChance(
-                                normalizeScore(m.score.value, pos?.turn || "white"),
+                                normalizeScore(m.score.value, turn || "white"),
                             );
                             if (bestWinChange - winChance < 10) {
                                 acc.push({ pv: m.uciMoves, winChance });

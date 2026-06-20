@@ -21,6 +21,7 @@ import { hasMorePriority, stripClock } from "@/utils/chess";
 import { getTabFile } from "@/utils/tabs";
 import { type TreeNode, treeIterator } from "@/utils/treeReducer";
 import MoveCell from "./MoveCell";
+import { useRenderTiming } from "@/utils/performance";
 import { TreeStateContext } from "./TreeStateContext";
 
 const transpositionCache = new WeakMap<TreeNode, Map<string, number[][]>>();
@@ -81,6 +82,7 @@ function CompleteMoveCell({
   tableLayout?: boolean;
   scoreText?: string;
 }) {
+  useRenderTiming("CompleteMoveCell");
   const store = useContext(TreeStateContext)!;
   const isStart = useStore(store, (s) => equal(movePath, s.headers.start));
 

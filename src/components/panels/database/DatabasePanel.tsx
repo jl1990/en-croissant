@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import useSWR from "swr/immutable";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
+import { markPerf, measurePerf, useRenderTiming } from "@/utils/performance";
 import { commands } from "@/bindings";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
@@ -71,7 +72,9 @@ function sortOpenings(openings: Opening[]) {
 }
 
 async function fetchOpening(db: DBType, tab: string) {
-  return match(db)
+  const perfId = `fetchOpening-${Date.now()}`;
+  markPerf(perfId);
+  const result = await match(db)
     .with({ type: "lch_all" }, async ({ fen, options, token }) => {
       const data = await getLichessGames(fen, options, token);
       return {
@@ -105,9 +108,13 @@ async function fetchOpening(db: DBType, tab: string) {
       };
     })
     .exhaustive();
+  markPerf(`${perfId}-end`);
+  measurePerf(perfId, `${perfId}-end`, "fetchOpening");
+  return result;
 }
 
 function DatabasePanel() {
+  useRenderTiming("DatabasePanel");
   const { t } = useTranslation();
 
   const store = useContext(TreeStateContext)!;

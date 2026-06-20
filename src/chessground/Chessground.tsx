@@ -2,8 +2,10 @@ import { Chessground as NativeChessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import type { Config } from "@lichess-org/chessground/config";
 import { Box } from "@mantine/core";
+import deepEqual from "fast-deep-equal/es6";
 import { useAtomValue } from "jotai";
-import { type Ref, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { memo, type Ref, useEffect, useImperativeHandle, useMemo, useRef } from "react";
+import { useRenderTiming } from "@/utils/performance";
 import { boardImageAtom, moveMethodAtom } from "@/state/atoms";
 
 const BOARD_COORDINATE_COLORS: Record<string, { white: string; black: string }> = {
@@ -55,85 +57,128 @@ export interface ChessgroundRef {
 
 interface ChessgroundProps extends Config {
   setBoardFen?: (fen: string) => void;
-  ref?: Ref<ChessgroundRef>;
 }
 
-export function Chessground({ ref, ...props }: ChessgroundProps) {
-  const [api, setApi] = useState<Api | null>(null);
-
+function ChessgroundInner(props: ChessgroundProps & { ref?: Ref<ChessgroundRef> }) {
+  const { ref } = props;
+  useRenderTiming("Chessground");
+  const apiRef = useRef<Api | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
+  const lastConfigRef = useRef<Record<string, unknown>>({});
 
   const moveMethod = useAtomValue(moveMethodAtom);
 
   useImperativeHandle(
     ref,
     () => ({
-      playPremove: () => api?.playPremove() ?? false,
-      cancelPremove: () => api?.cancelPremove(),
+      playPremove: () => apiRef.current?.playPremove() ?? false,
+      cancelPremove: () => apiRef.current?.cancelPremove(),
     }),
-    [api],
+    [],
   );
 
-  useEffect(() => {
-    if (boardRef?.current == null) return;
-    if (api) {
-      api.set({
-        ...props,
-        events: {
-          ...props.events,
-          change: () => {
-            if (props.setBoardFen && api) {
-              props.setBoardFen(api.getFen());
-            }
-          },
-        },
-      });
-    } else {
-      const chessgroundApi = NativeChessground(boardRef.current, {
-        ...props,
-        addDimensionsCssVarsTo: boardRef.current,
-        events: {
-          ...props.events,
-          change: () => {
-            if (props.setBoardFen && chessgroundApi) {
-              props.setBoardFen(chessgroundApi.getFen());
-            }
-          },
-        },
-        draggable: {
-          ...props.draggable,
-          enabled: moveMethod !== "select",
-        },
-        selectable: {
-          ...props.selectable,
-          enabled: moveMethod !== "drag",
-        },
-      });
-      setApi(chessgroundApi);
-    }
-  }, [api, props, boardRef]);
+  /** Keep latest props in a ref so the init effect can read fresh callbacks. */
+  const propsRef = useRef(props);
+  propsRef.current = props;
 
+  /**
+   * Merge moveMethod-driven drag/select defaults with parent-supplied draggable props
+   * (e.g. deleteOnDropOff for editing mode).
+   * moveMethod's enabled takes precedence over parent's draggable.enabled.
+   */
+  const mergedDraggable = useMemo(
+    () => ({
+      ...(props.draggable ?? {}),
+      enabled: moveMethod !== "select",
+    }),
+    [moveMethod, props.draggable],
+  );
+
+  const mergedSelectable = useMemo(
+    () => ({ enabled: moveMethod !== "drag" }),
+    [moveMethod],
+  );
+
+  /**
+   * Build the serializable config subset for change detection.
+   * Includes drawable/selectable free-form fields so shape/handler changes
+   * trigger reconfiguration.
+   */
+  const currentConfig = useMemo<Record<string, unknown>>(
+    () => ({
+      fen: props.fen,
+      orientation: props.orientation,
+      lastMove: props.lastMove,
+      turnColor: props.turnColor,
+      coordinates: props.coordinates,
+      coordinatesOnSquares: props.coordinatesOnSquares,
+      check: props.check,
+      movable: props.movable,
+      drawable: props.drawable,
+      highlight: props.highlight,
+      premovable: props.premovable,
+      animation: props.animation,
+      draggable: mergedDraggable,
+      selectable: mergedSelectable,
+    }),
+    [
+      props.fen,
+      props.orientation,
+      props.lastMove,
+      props.turnColor,
+      props.coordinates,
+      props.coordinatesOnSquares,
+      props.check,
+      props.movable,
+      props.drawable,
+      props.highlight,
+      props.premovable,
+      props.animation,
+      mergedDraggable,
+      mergedSelectable,
+    ],
+  );
+
+  // Initialize chessground once
   useEffect(() => {
-    api?.set({
-      ...props,
+    if (boardRef?.current == null || apiRef.current) return;
+
+    const chessgroundApi = NativeChessground(boardRef.current, {
+      ...propsRef.current,
+      addDimensionsCssVarsTo: boardRef.current,
       events: {
-        ...props.events,
+        ...propsRef.current.events,
         change: () => {
-          if (props.setBoardFen && api) {
-            props.setBoardFen(api.getFen());
+          const p = propsRef.current;
+          if (p.setBoardFen && apiRef.current) {
+            p.setBoardFen(apiRef.current.getFen());
           }
         },
       },
-      draggable: {
-        ...props.draggable,
-        enabled: moveMethod !== "select",
-      },
-      selectable: {
-        ...props.selectable,
-        enabled: moveMethod !== "drag",
-      },
+      draggable: mergedDraggable,
+      selectable: mergedSelectable,
     });
-  }, [api, props, moveMethod]);
+
+    apiRef.current = chessgroundApi;
+    lastConfigRef.current = currentConfig;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Update config when it changes, using deep equality that handles Maps, Sets, and objects
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!api) return;
+
+    if (deepEqual(currentConfig, lastConfigRef.current)) {
+      return;
+    }
+    lastConfigRef.current = currentConfig;
+
+    api.set({
+      ...props,
+      draggable: mergedDraggable,
+      selectable: mergedSelectable,
+    });
+  }, [currentConfig, props, mergedDraggable, mergedSelectable]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const boardImage = useAtomValue(boardImageAtom);
   const boardCoordColors = getBoardCoordinateColors(boardImage);
@@ -151,3 +196,7 @@ export function Chessground({ ref, ...props }: ChessgroundProps) {
     />
   );
 }
+
+const Chessground = memo(ChessgroundInner);
+export { Chessground };
+export type { ChessgroundProps };

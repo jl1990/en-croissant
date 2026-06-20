@@ -27,9 +27,11 @@ import {
 } from "@/utils/engines";
 import { getBestMoves as lichessGetBestMoves } from "@/utils/lichess/api";
 import { useThrottledEffect } from "@/utils/misc";
+import { useRenderTiming } from "@/utils/performance";
 import { TreeStateContext } from "../common/TreeStateContext";
 
 function EvalListener() {
+  useRenderTiming("EvalListener");
   const [engines] = useAtom(enginesAtom);
   const threat = useAtomValue(currentThreatAtom);
   const store = useContext(TreeStateContext)!;

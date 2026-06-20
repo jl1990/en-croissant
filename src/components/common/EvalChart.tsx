@@ -231,7 +231,7 @@ function EvalChart(props: EvalChartProps) {
             }}
             gridAxis="none"
             tooltipProps={{
-              content: ({ payload, active }) => (
+              content: ({ payload, active }: { payload?: any; active?: boolean }) => (
                 <CustomTooltip active={active} payload={payload} type="cp" />
               ),
             }}
@@ -284,7 +284,7 @@ function EvalChart(props: EvalChartProps) {
               }}
               gridAxis="none"
               tooltipProps={{
-                content: ({ payload, active }) => (
+                content: ({ payload, active }: { payload?: any; active?: boolean }) => (
                   <CustomTooltip active={active} payload={payload} type="wdl" />
                 ),
               }}

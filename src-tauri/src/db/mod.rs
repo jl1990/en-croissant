@@ -413,7 +413,10 @@ impl Visitor for Importer {
         let frame = self.frames.last_mut().unwrap();
         let pre_move_position = frame.position.clone();
 
-        let m = san.san.to_move(&frame.position).ok();
+        // san is from pgn_reader (shakmaty 0.27), so convert via string
+        let m = shakmaty::san::SanPlus::from_str(&san.san.to_string())
+            .ok()
+            .and_then(|san30| san30.san.to_move(&frame.position).ok());
         if let Some(m) = m {
             if is_mainline && m.is_promotion() {
                 let cur_material = get_material_count(frame.position.board());
@@ -428,7 +431,7 @@ impl Visitor for Importer {
                 .moves
                 .push(encode_move(&m, &frame.position).unwrap());
             frame.pre_move_positions.push(pre_move_position);
-            frame.position.play_unchecked(&m);
+            frame.position.play_unchecked(m);
 
             if is_mainline {
                 self.game.position = frame.position.clone();
@@ -1465,8 +1468,8 @@ pub async fn get_players_game_info(
                     let Some(m) = decode_move(byte, &chess) else {
                         break;
                     };
-                    chess.play_unchecked(&m);
-                    setups.push(chess.clone().into_setup(EnPassantMode::Legal));
+                    chess.play_unchecked(m);
+                    setups.push(chess.to_setup(EnPassantMode::Legal));
                 }
 
                 setups.reverse();

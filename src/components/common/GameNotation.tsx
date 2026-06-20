@@ -27,11 +27,12 @@ import {
 import { INITIAL_FEN } from "chessops/fen";
 import equal from "fast-deep-equal";
 import { useAtom, useAtomValue } from "jotai";
-import React, { memo, useContext, useEffect, useRef, useState } from "react";
+import React, { memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import Comment from "@/components/common/Comment";
+import { useRenderTiming } from "@/utils/performance";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
   currentInvisibleAtom,
@@ -47,6 +48,7 @@ import styles from "./GameNotation.module.css";
 import OpeningName from "./OpeningName";
 
 function GameNotation({ topBar, controls }: { topBar?: boolean; controls?: React.ReactNode }) {
+  useRenderTiming("GameNotation");
   const store = useContext(TreeStateContext)!;
   const currentFen = useStore(store, (s) => s.currentNode().fen);
   const copyPgn = useStore(store, (s) => s.copyPgn);
@@ -197,6 +199,7 @@ const RenderVariationTree = memo(
     first?: boolean;
     targetRef: React.RefObject<HTMLSpanElement | null>;
   }) {
+    useRenderTiming("RenderVariationTree");
     const store = useContext(TreeStateContext)!;
     const showVariations = useAtomValue(currentShowVariationsAtom);
     const showComments = useAtomValue(currentShowCommentsAtom);
@@ -521,11 +524,13 @@ function RowSegment({
   splitRow?: boolean;
   targetRef: React.RefObject<HTMLSpanElement | null>;
 }) {
+  // Memoize path parsing to avoid .split().map() on every render
+  const whitePath = useMemo(() => (whitePathStr ? whitePathStr.split(",").map(Number) : []), [whitePathStr]);
+  const blackPath = useMemo(() => (blackPathStr ? blackPathStr.split(",").map(Number) : []), [blackPathStr]);
+
   const store = useContext(TreeStateContext)!;
   const showComments = useAtomValue(currentShowCommentsAtom);
-  const whitePath = whitePathStr ? whitePathStr.split(",").map(Number) : [];
   const white = useStore(store, (s) => s.getNode(whitePath));
-  const blackPath = blackPathStr ? blackPathStr.split(",").map(Number) : [];
   const black = useStore(store, (s) => s.getNode(blackPath));
   return (
     <Table.Tr>

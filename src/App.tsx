@@ -9,7 +9,9 @@ import {
   TextInput,
 } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
+import { SWRConfig } from "swr";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
+import { useMemo } from "react";
 import { getMatches } from "@tauri-apps/plugin-cli";
 import { listen } from "@tauri-apps/api/event";
 import { attachConsole, error, info, warn } from "@tauri-apps/plugin-log";
@@ -238,7 +240,7 @@ export default function App() {
     };
   }, [setDatabaseConversionState]);
 
-  const theme = createTheme({
+  const theme = useMemo(() => createTheme({
     primaryColor,
     colors: {
       dark: [
@@ -271,7 +273,7 @@ export default function App() {
         },
       }),
     },
-  });
+  }), [primaryColor, spellCheck]);
 
   return (
     <DndProvider backend={HTML5Backend}>
@@ -284,7 +286,17 @@ export default function App() {
       >
         <ContextMenuProvider>
           <Notifications />
-          <RouterProvider router={router} />
+          <SWRConfig
+            value={{
+              revalidateOnFocus: false,
+              dedupingInterval: 5000,
+              focusThrottleInterval: 10000,
+              errorRetryCount: 1,
+              shouldRetryOnError: false,
+            }}
+          >
+            <RouterProvider router={router} />
+          </SWRConfig>
         </ContextMenuProvider>
       </MantineProvider>
     </DndProvider>

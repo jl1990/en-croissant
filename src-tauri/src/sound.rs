@@ -120,11 +120,14 @@ mod server {
             .layer(Extension(sound_dir));
 
         tauri::async_runtime::spawn(async move {
-            axum::Server::from_tcp(listener)
-                .expect("failed to create sound server")
-                .serve(app.into_make_service())
+            listener
+                .set_nonblocking(true)
+                .expect("failed to set nonblocking");
+            let listener = tokio::net::TcpListener::from_std(listener)
+                .expect("failed to create sound server");
+            axum::serve(listener, app.into_make_service())
                 .await
-                .expect("sound server error");
+                .unwrap_or_else(|e| log::error!("Sound server error: {}", e));
         });
 
         log::info!("Sound server started on port {port}");

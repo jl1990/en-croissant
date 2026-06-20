@@ -38,7 +38,7 @@ export default defineConfig({
     build: {
         minify: isDebug ? false : "esbuild",
         sourcemap: isDebug ? "inline" : false,
-        target: process.env.TAURI_ENV_PLATFORM == "windows" ? "chrome105" : "safari13",
+        target: process.env.TAURI_ENV_PLATFORM == "windows" ? "chrome105" : "safari15",
     },
     resolve: {
         alias: {
@@ -47,6 +47,7 @@ export default defineConfig({
     },
     test: {
         environment: "jsdom",
+        setupFiles: ["./src/vitest.setup.ts"],
     },
     define: {
         "import.meta.env.VITE_PLATFORM": JSON.stringify(os.platform()),

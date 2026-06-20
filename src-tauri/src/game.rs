@@ -3,15 +3,16 @@ use std::{
     fs::File,
     io::{BufRead, BufReader, Cursor, Read, Write},
     path::PathBuf,
+    str::FromStr,
     sync::Arc,
     time::Instant,
 };
 
 use dashmap::DashMap;
 use log::{error, info};
-use pgn_reader::{BufferedReader, RawHeader, Skip, Visitor};
+use pgn_reader::{BufferedReader, RawHeader, SanPlus as PgnSanPlus, Skip, Visitor};
 use polyglot_book_rs::PolyglotBook;
-use rand::{seq::IteratorRandom, Rng};
+use rand::{seq::IteratorRandom, Rng, RngExt};
 use serde::{Deserialize, Serialize};
 use shakmaty::{
     fen::Fen, san::SanPlus, uci::UciMove, CastlingMode, Chess, Color, EnPassantMode, Position,
@@ -21,7 +22,7 @@ use tauri::AppHandle;
 use tauri_specta::Event;
 use tokio::{
     sync::{watch, Mutex, RwLock},
-    time::{interval, Duration},
+    time::{interval, Duration, MissedTickBehavior},
 };
 
 use crate::{
@@ -274,7 +275,7 @@ impl GameController {
             status: self.status.clone(),
             initial_fen: self.initial_fen.clone(),
             moves: self.moves.clone(),
-            current_fen: Fen::from_position(self.position.clone(), EnPassantMode::Legal)
+            current_fen: Fen::from_position(&self.position, EnPassantMode::Legal)
                 .to_string(),
             ply: self.moves.len() as u32,
             turn: turn.to_string(),
@@ -286,7 +287,7 @@ impl GameController {
     }
 
     fn position_key(position: &Chess) -> String {
-        let fen = Fen::from_position(position.clone(), EnPassantMode::Legal).to_string();
+        let fen = Fen::from_position(position, EnPassantMode::Legal).to_string();
         fen.split_whitespace().take(4).collect::<Vec<_>>().join(" ")
     }
 
@@ -310,7 +311,7 @@ impl GameController {
         let uci = UciMove::from_ascii(uci_str.as_bytes())?;
         let mv = uci.to_move(&self.position)?;
 
-        let san = SanPlus::from_move_and_play_unchecked(&mut self.position.clone(), &mv);
+        let san = SanPlus::from_move_and_play_unchecked(&mut self.position.clone(), mv);
 
         let clock = self.clock.as_ref().and_then(|c| {
             if self.position.turn() == Color::White {
@@ -320,7 +321,7 @@ impl GameController {
             }
         });
 
-        self.position.play_unchecked(&mv);
+        self.position.play_unchecked(mv);
 
         let pos_key = Self::position_key(&self.position);
         *self.position_history.entry(pos_key).or_insert(0) += 1;
@@ -347,7 +348,7 @@ impl GameController {
             .map(|c| (c.white_time, c.black_time))
             .unwrap_or((None, None));
 
-        let fen_after = Fen::from_position(self.position.clone(), EnPassantMode::Legal).to_string();
+        let fen_after = Fen::from_position(&self.position, EnPassantMode::Legal).to_string();
 
         let game_move = GameMove {
             uci: uci_str.to_string(),
@@ -368,9 +369,9 @@ impl GameController {
         let uci = UciMove::from_ascii(uci_str.as_bytes())?;
         let mv = uci.to_move(&self.position)?;
 
-        let san = SanPlus::from_move_and_play_unchecked(&mut self.position.clone(), &mv);
+        let san = SanPlus::from_move_and_play_unchecked(&mut self.position.clone(), mv);
 
-        self.position.play_unchecked(&mv);
+        self.position.play_unchecked(mv);
 
         let pos_key = Self::position_key(&self.position);
         *self.position_history.entry(pos_key).or_insert(0) += 1;
@@ -381,7 +382,7 @@ impl GameController {
             .map(|c| (c.white_time, c.black_time))
             .unwrap_or((None, None));
 
-        let fen_after = Fen::from_position(self.position.clone(), EnPassantMode::Legal).to_string();
+        let fen_after = Fen::from_position(&self.position, EnPassantMode::Legal).to_string();
 
         let game_move = GameMove {
             uci: uci_str.to_string(),
@@ -408,7 +409,7 @@ impl GameController {
         for m in &self.moves {
             let uci = UciMove::from_ascii(m.uci.as_bytes())?;
             let mv = uci.to_move(&self.position)?;
-            self.position.play_unchecked(&mv);
+            self.position.play_unchecked(mv);
             let pos_key = Self::position_key(&self.position);
             *self.position_history.entry(pos_key).or_insert(0) += 1;
         }
@@ -736,7 +737,7 @@ impl GameManager {
         controller.check_game_end();
 
         let (white_time, black_time) = controller.get_current_times();
-        let fen = Fen::from_position(controller.position.clone(), EnPassantMode::Legal).to_string();
+        let fen = Fen::from_position(&controller.position, EnPassantMode::Legal).to_string();
 
         GameMoveEvent {
             game_id: game_id.to_string(),
@@ -863,7 +864,7 @@ struct OpeningBookResult {
 }
 
 fn select_random_epd_entry(reader: impl BufRead) -> Result<OpeningBookSelection, Error> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let selected_line = reader
         .lines()
@@ -952,22 +953,30 @@ impl Visitor for OpeningBookPgnVisitor {
         Skip(self.skip)
     }
 
-    fn san(&mut self, san: SanPlus) {
+    fn san(&mut self, san: PgnSanPlus) {
         if self.skip {
             return;
         }
 
-        let mv = match san.san.to_move(&self.current_position) {
-            Ok(mv) => mv,
+        // san is from pgn_reader (shakmaty 0.27), so convert via string
+        let san30 = match shakmaty::san::SanPlus::from_str(&san.san.to_string()) {
+            Ok(s) => s,
+            Err(_) => {
+                self.skip = true;
+                return;
+            }
+        };
+        let mv: shakmaty::Move = match san30.san.to_move(&self.current_position) {
+            Ok(m) => m,
             Err(_) => {
                 self.skip = true;
                 return;
             }
         };
 
-        let uci = UciMove::from_move(&mv, self.castling_mode).to_string();
+        let uci = UciMove::from_move(mv.clone(), self.castling_mode).to_string();
         self.moves.push(uci);
-        self.current_position.play_unchecked(&mv);
+        self.current_position.play_unchecked(mv);
     }
 
     fn end_game(&mut self) -> Self::Result {
@@ -976,7 +985,7 @@ impl Visitor for OpeningBookPgnVisitor {
         }
 
         let initial_fen = self.initial_fen.clone().unwrap_or_else(|| {
-            Fen::from_position(self.initial_position.clone(), EnPassantMode::Legal).to_string()
+            Fen::from_position(&self.initial_position, EnPassantMode::Legal).to_string()
         });
 
         let candidate = OpeningBookSelection {
@@ -985,8 +994,8 @@ impl Visitor for OpeningBookPgnVisitor {
         };
 
         self.seen += 1;
-        let mut rng = rand::thread_rng();
-        if rng.gen_range(0..self.seen) == 0 {
+        let mut rng = rand::rng();
+        if rng.random_range(0..self.seen) == 0 {
             self.selected = Some(candidate.clone());
         }
 
@@ -1052,10 +1061,10 @@ fn normalize_polyglot_uci(uci: &str) -> String {
 fn choose_weighted_index(weights: &[u16], rng: &mut impl Rng) -> usize {
     let total: u64 = weights.iter().map(|w| *w as u64).sum();
     if total == 0 {
-        return rng.gen_range(0..weights.len());
+        return rng.random_range(0..weights.len());
     }
 
-    let mut target = rng.gen_range(0..total);
+    let mut target = rng.random_range(0..total);
     for (index, weight) in weights.iter().enumerate() {
         let weight = *weight as u64;
         if target < weight {
@@ -1209,6 +1218,7 @@ async fn game_loop(
     app: AppHandle,
 ) {
     let mut clock_interval = interval(Duration::from_millis(100));
+    clock_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
     let mut engine_task: Option<tokio::task::JoinHandle<Result<(), Error>>> = None;
 
     if maybe_start_engine(&controller, &engine_task).await {
@@ -1280,7 +1290,7 @@ async fn game_loop(
             }
 
             _ = clock_interval.tick() => {
-                let is_finished;
+                let (clock_times, is_finished, result_to_emit);
 
                 {
                     let mut ctrl = controller.write().await;
@@ -1291,18 +1301,28 @@ async fn game_loop(
 
                     if let Some(result) = ctrl.check_timeout() {
                         ctrl.end_game(result.clone());
-                        let _ = GameOverEvent { game_id: game_id.clone(), result, moves: ctrl.moves.clone() }.emit(&app);
+                        result_to_emit = Some((result, ctrl.moves.clone()));
+                        drop(ctrl);
+                        if let Some((result, moves)) = result_to_emit {
+                            let _ = GameOverEvent { game_id: game_id.clone(), result, moves }.emit(&app);
+                        }
                         break;
                     }
 
                     let (white_time, black_time) = ctrl.get_current_times();
+                    clock_times = Some((white_time, black_time));
+                    is_finished = ctrl.status != GameStatus::Playing;
+                    drop(ctrl);
+                }
+
+                // Emit clock event outside the controller lock so move
+                // processing is not delayed by frontend event handling.
+                if let Some((white_time, black_time)) = clock_times {
                     let _ = ClockUpdateEvent {
                         game_id: game_id.clone(),
                         white_time,
                         black_time,
                     }.emit(&app);
-
-                    is_finished = ctrl.status != GameStatus::Playing;
                 }
 
                 if is_finished {
@@ -1338,14 +1358,14 @@ fn try_polyglot_book_move(controller: &GameController) -> Option<String> {
         return None;
     }
 
-    let fen = Fen::from_position(controller.position.clone(), EnPassantMode::Legal).to_string();
+    let fen = Fen::from_position(&controller.position, EnPassantMode::Legal).to_string();
     let entries = book.get_all_moves_from_fen(&fen);
 
     if entries.is_empty() {
         return None;
     }
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let legal_moves = entries
         .into_iter()
         .filter_map(|entry| {

@@ -56,7 +56,7 @@ impl Visitor for Lexer {
         Ok(self.tokens.clone())
     }
 
-    fn outcome(&mut self, outcome: Option<shakmaty::Outcome>) {
+    fn outcome(&mut self, outcome: Option<pgn_reader::Outcome>) {
         self.tokens.push(Token::Outcome(
             outcome.map(|o| o.to_string()).unwrap_or("*".to_string()),
         ));
