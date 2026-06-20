@@ -27,3 +27,7 @@ tsconfig.tsbuildinfo
 *.sw?
 
 src-tauri/gen/
+
+# Generated artifacts
+PLAN-*.md
+graphify-out/
