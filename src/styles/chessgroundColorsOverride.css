@@ -14,7 +14,7 @@ cg-board square.selected::before {
 }
 
 cg-board square.selected {
-  background: none;
+  background: none !important;
 }
 
 cg-board {
@@ -35,15 +35,17 @@ cg-board square.premove-dest {
 cg-board square.oc.premove-dest {
   background: radial-gradient(transparent 0%, transparent 80%, rgba(20, 30, 85, 0.2) 80%);
 }
-cg-board square.premove-dest:hover::before {
+cg-board square.premove-dest:hover::before,
+cg-board square.premove-dest.hover::before {
   content: '';
   position: absolute;
   inset: 1px;
   background: rgba(20, 30, 85, 0.2);
 }
 
-cg-board square.premove-dest:hover {
-  background: none;
+cg-board square.premove-dest:hover,
+cg-board square.premove-dest.hover {
+  background: none !important;
 }
 cg-board square.check {
   background: radial-gradient(
@@ -62,7 +64,7 @@ cg-board square.current-premove::before {
 }
 
 cg-board square.current-premove {
-  background: none;
+  background: none !important;
 }
 
 /** Last-move and check highlights — inset via ::before to avoid WebKitGTK seam */
@@ -75,7 +77,7 @@ cg-board square.last-move::before {
 }
 
 cg-board square.last-move {
-  background: none;
+  background: none !important;
 }
 
 /** Alternating colors in rank/file labels */

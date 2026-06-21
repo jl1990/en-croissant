@@ -6,15 +6,19 @@ cg-board square.move-dest {
    fills reach the 12.5% element boundary. Paint all square highlight fills
    via ::before with inset: 1px to keep the color 1px from the edge. */
 
-[data-mantine-color-scheme="dark"]
-cg-board square.move-dest:hover::before,
-cg-board square.move-dest.hover::before {
+[data-mantine-color-scheme="dark"] cg-board square.move-dest.hover::before {
   background: color-mix(in srgb, var(--mantine-primary-color-5) 60%, transparent);
 }
 
-[data-mantine-color-scheme="light"]
-cg-board square.move-dest:hover::before,
-cg-board square.move-dest.hover::before {
+[data-mantine-color-scheme="dark"] cg-board square.move-dest:hover::before {
+  background: color-mix(in srgb, var(--mantine-primary-color-5) 60%, transparent);
+}
+
+[data-mantine-color-scheme="light"] cg-board square.move-dest.hover::before {
+  background: color-mix(in srgb, var(--mantine-primary-color-3) 60%, transparent);
+}
+
+[data-mantine-color-scheme="light"] cg-board square.move-dest:hover::before {
   background: color-mix(in srgb, var(--mantine-primary-color-3) 60%, transparent);
 }
 
@@ -23,11 +27,11 @@ cg-board square.move-dest.hover::before {
   content: '';
   position: absolute;
   inset: 1px;
-  zoom: 1;
 }
 
-cg-board square.move-dest:hover {
-  background: none;
+cg-board square.move-dest:hover,
+cg-board square.move-dest.hover {
+  background: none !important;
   border-radius: 0;
 }
 
@@ -44,25 +48,32 @@ cg-board square.oc.move-dest::after {
   pointer-events: none;
 }
 
-[data-mantine-color-scheme="dark"]
-cg-board square.oc.move-dest:hover::before {
+[data-mantine-color-scheme="dark"] cg-board square.oc.move-dest.hover::before {
   background: color-mix(in srgb, var(--mantine-primary-color-5) 60%, transparent);
 }
 
-[data-mantine-color-scheme="light"]
-cg-board square.oc.move-dest:hover::before {
+[data-mantine-color-scheme="dark"] cg-board square.oc.move-dest:hover::before {
+  background: color-mix(in srgb, var(--mantine-primary-color-5) 60%, transparent);
+}
+
+[data-mantine-color-scheme="light"] cg-board square.oc.move-dest.hover::before {
   background: color-mix(in srgb, var(--mantine-primary-color-3) 60%, transparent);
 }
 
-cg-board square.oc.move-dest:hover::before {
+[data-mantine-color-scheme="light"] cg-board square.oc.move-dest:hover::before {
+  background: color-mix(in srgb, var(--mantine-primary-color-3) 60%, transparent);
+}
+
+cg-board square.oc.move-dest:hover::before,
+cg-board square.oc.move-dest.hover::before {
   content: '';
   position: absolute;
   inset: 1px;
-  zoom: 1;
 }
 
-cg-board square.oc.move-dest:hover {
-  background: none;
+cg-board square.oc.move-dest:hover,
+cg-board square.oc.move-dest.hover {
+  background: none !important;
   border-radius: 0;
 }
 

@@ -139,10 +139,16 @@ describe("Chessground drag artifact CSS", () => {
     const elementRules = [
       /square\.selected\s*\{[^}]*background\s*:\s*none/,
       /square\.last-move\s*\{[^}]*background\s*:\s*none/,
+      /square\.move-dest\.hover\s*\{[^}]*background\s*:\s*none\s*!important/,
+      /square\.premove-dest\.hover\s*\{[^}]*background\s*:\s*none\s*!important/,
     ];
     for (const pattern of elementRules) {
       expect(allCss).toMatch(pattern);
     }
+
+    // Ensure no clip-path on cg-board square (prevents visible gaps)
+    const squareRule = allCss.match(/cg-board square\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(squareRule).not.toMatch(/clip-path/);
   });
 });
 
