@@ -95,12 +95,12 @@ function installDragPieceOverlay(root: HTMLElement): () => void {
   let animationFrame = 0;
 
   const removeOverlay = () => {
-    const hadOverlay = overlay !== null;
     overlay?.remove();
     overlay = null;
     lastSrc = null;
-    // Only flush if a drag actually ended (overlay was present)
-    if (hadOverlay) flushCompositor();
+    // Flush compositor after drag ends — WebKitGTK may not invalidate the
+    // area where the dragging piece was hidden.
+    flushCompositor();
   };
 
   const snap = (v: number) => Math.round(v * window.devicePixelRatio) / window.devicePixelRatio;
@@ -111,17 +111,18 @@ function installDragPieceOverlay(root: HTMLElement): () => void {
       repaint of the affected area. Throttled by RAF. */
   let flushPending = false;
   const flushCompositor = () => {
-    if (flushPending || disposed) return;
+    if (flushPending) return;
     flushPending = true;
     const board = root.querySelector<HTMLElement>("cg-board");
     if (!board) return;
     board.style.willChange = "transform";
     requestAnimationFrame(() => {
-      if (disposed) return;
       board.style.willChange = "";
       flushPending = false;
     });
   };
+
+  let moveMutationPending = false;
 
   const updateOverlay = () => {
     animationFrame = 0;
@@ -167,37 +168,27 @@ function installDragPieceOverlay(root: HTMLElement): () => void {
     }
   };
 
+  /** Detect when a piece move animation completes (fading elements
+      removed) and flush the WebKitGTK compositor. */
   const onMutation: MutationCallback = (mutations) => {
-    // Detect when piece.fading class is removed (Chessground removes the
-    // class before removing the element, so checking removedNodes is
-    // unreliable). Use attributeOldValue to catch the class removal itself.
-    const hasFadingEnd = mutations.some(
+    const hasFadingRemoval = mutations.some(
       (m) =>
-        (m.type === "attributes" &&
-          m.attributeName === "class" &&
-          typeof m.oldValue === "string" &&
-          m.oldValue.includes("fading") &&
-          m.target instanceof HTMLElement &&
-          !m.target.classList.contains("fading")) ||
-        (m.type === "childList" &&
-          Array.from(m.removedNodes).some(
-            (n) => n instanceof HTMLElement && n.classList?.contains("fading"),
-          )),
+        m.type === "childList" &&
+        Array.from(m.removedNodes).some(
+          (n) => n instanceof HTMLElement && n.classList?.contains("fading"),
+        ),
     );
-    if (hasFadingEnd) {
-      // Delay allows any remaining CSS transitions to finish
-      flushTimeoutId = window.setTimeout(() => flushCompositor(), 300);
+    if (hasFadingRemoval) {
+      // Delay to let any remaining CSS transitions finish
+      setTimeout(() => flushCompositor(), 300);
     }
     requestUpdate();
   };
-
-  let flushTimeoutId: number | undefined;
 
   const observer = new MutationObserver(onMutation);
   observer.observe(root, {
     attributes: true,
     attributeFilter: ["class", "style"],
-    attributeOldValue: true,
     childList: true,
     subtree: true,
   });
@@ -210,10 +201,7 @@ function installDragPieceOverlay(root: HTMLElement): () => void {
   window.addEventListener("touchend", requestUpdate, true);
   requestUpdate();
 
-  let disposed = false;
-
   return () => {
-    disposed = true;
     observer.disconnect();
     window.removeEventListener("pointermove", requestUpdate, true);
     window.removeEventListener("mousemove", requestUpdate, true);
@@ -221,9 +209,6 @@ function installDragPieceOverlay(root: HTMLElement): () => void {
     window.removeEventListener("pointerup", requestUpdate, true);
     window.removeEventListener("mouseup", requestUpdate, true);
     window.removeEventListener("touchend", requestUpdate, true);
-    if (flushTimeoutId !== undefined) {
-      window.clearTimeout(flushTimeoutId);
-    }
     if (animationFrame) {
       window.cancelAnimationFrame(animationFrame);
     }
