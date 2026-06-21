@@ -45,12 +45,8 @@ cg-board square {
   pointer-events: none;
   /* WebKitGTK shows a dark SVG-texture seam at adjacent 12.5% element
      boundaries (subpixel compositing artifact). A transparent outline fills
-     the boundary without affecting layout or visible appearance. Clip the
-     background paint inward so any full-square highlight (selected, hover,
-     last-move) doesn't reach the compositing edge. */
+     the boundary without affecting layout or visible appearance. */
   outline: 1px solid transparent;
-  -webkit-clip-path: inset(1px);
-  clip-path: inset(1px);
 }
 
 cg-board square.move-dest {
