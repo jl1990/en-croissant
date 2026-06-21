@@ -2,6 +2,11 @@
   box-sizing: content-box;
   position: relative;
   display: block;
+  /* Force a single GPU compositing layer for the entire board. When individual
+     piece elements are moved/removed (move animation ending), WebKitGTK can
+     leave stale compositor backing-store pixels at the element boundary.
+     A parent compositing layer ensures clean repaint of the dirty rect. */
+  backface-visibility: hidden;
 }
 
 cg-container {
@@ -48,9 +53,12 @@ cg-board square.move-dest {
   pointer-events: auto;
 }
 
-/* No will-change for any element — permanent compositing layers
-   create edge seams in WebKitGTK. The <img> drag overlay uses
-   left/top positioning, not CSS transforms or compositing hints. */
+/* No will-change on PIECES — upstream Chessground sets will-change:
+   transform on every piece, creating per-element GPU compositing layers
+   that produce dark edge seams at 12.5% boundaries in WebKitGTK.
+   We override with will-change: auto and put the .cg-wrap itself on a
+   single compositing layer (backface-visibility: hidden) so the board
+   is one GPU surface with no per-piece layer cleanup issues. */
 
 .cg-wrap piece {
   position: absolute;
