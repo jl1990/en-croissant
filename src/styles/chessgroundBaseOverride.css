@@ -38,15 +38,19 @@ cg-board square {
   height: 12.5%;
   box-sizing: border-box;
   pointer-events: none;
+  /* WebKitGTK shows a dark SVG-texture seam at adjacent 12.5% element
+     boundaries (subpixel compositing artifact). A transparent outline fills
+     the boundary without affecting layout or visible appearance. */
+  outline: 1px solid transparent;
 }
 
 cg-board square.move-dest {
   pointer-events: auto;
 }
 
-/* No will-change for highlight overlays — they don't animate and
-   the GPU composited layers create 1px subpixel seams at fractional board sizes.
-   Pieces still get will-change (below) for smooth dragging animations. */
+/* No will-change for any element — permanent compositing layers
+   create edge seams in WebKitGTK. The <img> drag overlay uses
+   left/top positioning, not CSS transforms or compositing hints. */
 
 .cg-wrap piece {
   position: absolute;
@@ -54,17 +58,45 @@ cg-board square.move-dest {
   left: 0;
   width: 12.5%;
   height: 12.5%;
-  background-size: cover;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  background-position: center;
+  /* WebKitGTK can expose 1-3px SVG background texture bleed at the
+     transformed piece element boundary. Clip the paint edge inward; all
+     supported piece sets keep visual artwork away from the square edge.
+     will-change: auto explicitly overrides the upstream Chessground base CSS
+     which promotes every piece to a compositor layer. Removing this
+     re-enables permanent compositor layers, causing the edge-seam artifact. */
+  -webkit-clip-path: inset(1px);
+  clip-path: inset(1px);
   z-index: 2;
-  will-change: transform;
+  will-change: auto;
   pointer-events: none;
-  cursor: grab;
 }
 
 cg-board piece.dragging {
   cursor: grabbing;
+  /* Hide the native transform-moved SVG background while dragging. WebKitGTK
+     can leave texture trails from this layer; Chessground.tsx renders a
+     left/top-positioned .drag-copy overlay instead. */
+  background-image: none !important;
+  opacity: 0;
   /* !important to override z-index from 3D piece inline style */
   z-index: 11 !important;
+}
+
+.cg-wrap img.drag-copy {
+  position: absolute;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+  transform: none !important;
+  pointer-events: none;
+  z-index: 12 !important;
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-clip-path: inset(1px);
+  clip-path: inset(1px);
 }
 
 piece.anim {
@@ -77,7 +109,13 @@ piece.fading {
 }
 
 .cg-wrap piece.ghost {
-  opacity: 0;
+  /* opacity:0 alone still composites the SVG background box edge in
+     WebKitGTK. Zero all paint paths to prevent the seam at the original
+     square while the piece is being dragged. */
+  background-image: none !important;
+  opacity: 0 !important;
+  visibility: hidden;
+  display: none !important;
 }
 
 .cg-wrap piece svg {

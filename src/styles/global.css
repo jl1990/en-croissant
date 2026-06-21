@@ -16,7 +16,15 @@ cg-board square.move-dest:hover {
 
 cg-board square.oc.move-dest {
   background: none;
-  box-shadow: inset 0 0 0 5px rgba(0, 0, 0, 0.3);
+}
+
+cg-board square.oc.move-dest::after {
+  content: "";
+  position: absolute;
+  inset: 32%;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.3);
+  pointer-events: none;
 }
 
 [data-mantine-color-scheme="dark"] cg-board square.oc.move-dest:hover {

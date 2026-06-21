@@ -55,6 +55,128 @@ export interface ChessgroundRef {
   cancelPremove: () => void;
 }
 
+/** Parse a CSS `url("...")` / `url(...)` value into the raw URL string. */
+export function parseCssUrl(backgroundImage: string): string | null {
+  const trimmed = backgroundImage.trim();
+  if (!trimmed || trimmed === "none") return null;
+  // Match url("..."), url('...'), or url(...)
+  const match = trimmed.match(/^url\(["']?(.+?)["']?\)$/i);
+  return match ? match[1] : null;
+}
+
+/** Build the drag overlay class list (piece classes minus dragging/drag-copy). */
+export function getDragOverlayClassName(className: string): string {
+  return className
+    .split(/\s+/)
+    .filter((classPart) => classPart && classPart !== "dragging" && classPart !== "drag-copy")
+    .join(" ");
+}
+
+/** Read the SVG background-image URL for a piece class set by probing under cg-board. */
+function readPieceSvgUrl(root: HTMLElement, pieceClassName: string): string | null {
+  const board = root.querySelector("cg-board");
+  if (!board) return null;
+  const probe = document.createElement("piece");
+  probe.className = pieceClassName;
+  probe.setAttribute("aria-hidden", "true");
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  probe.style.width = "12.5%";
+  probe.style.height = "12.5%";
+  board.appendChild(probe);
+  const bg = getComputedStyle(probe).backgroundImage;
+  board.removeChild(probe);
+  return parseCssUrl(bg);
+}
+
+function installDragPieceOverlay(root: HTMLElement): () => void {
+  let overlay: HTMLImageElement | null = null;
+  let lastSrc: string | null = null;
+  let animationFrame = 0;
+
+  const removeOverlay = () => {
+    overlay?.remove();
+    overlay = null;
+    lastSrc = null;
+  };
+
+  const snap = (v: number) => Math.round(v * window.devicePixelRatio) / window.devicePixelRatio;
+
+  const updateOverlay = () => {
+    animationFrame = 0;
+
+    const draggingPiece = root.querySelector<HTMLElement>("cg-board piece.dragging");
+    if (!draggingPiece) {
+      removeOverlay();
+      return;
+    }
+
+    const rootRect = root.getBoundingClientRect();
+    const pieceRect = draggingPiece.getBoundingClientRect();
+
+    if (!overlay) {
+      overlay = document.createElement("img");
+      overlay.className = "drag-copy";
+      overlay.setAttribute("aria-hidden", "true");
+      overlay.setAttribute("draggable", "false");
+      root.appendChild(overlay);
+    }
+
+    const pieceClassName = getDragOverlayClassName(draggingPiece.className);
+    const src = readPieceSvgUrl(root, pieceClassName);
+    if (src && src !== lastSrc) {
+      overlay.src = src;
+      lastSrc = src;
+    }
+
+    const left = `${snap(pieceRect.left - rootRect.left)}px`;
+    const top = `${snap(pieceRect.top - rootRect.top)}px`;
+    const width = `${snap(pieceRect.width)}px`;
+    const height = `${snap(pieceRect.height)}px`;
+
+    if (overlay.style.left !== left) overlay.style.left = left;
+    if (overlay.style.top !== top) overlay.style.top = top;
+    if (overlay.style.width !== width) overlay.style.width = width;
+    if (overlay.style.height !== height) overlay.style.height = height;
+  };
+
+  const requestUpdate = () => {
+    if (!animationFrame) {
+      animationFrame = window.requestAnimationFrame(updateOverlay);
+    }
+  };
+
+  const observer = new MutationObserver(requestUpdate);
+  observer.observe(root, {
+    attributes: true,
+    attributeFilter: ["class", "style"],
+    childList: true,
+    subtree: true,
+  });
+
+  window.addEventListener("pointermove", requestUpdate, true);
+  window.addEventListener("mousemove", requestUpdate, true);
+  window.addEventListener("touchmove", requestUpdate, true);
+  window.addEventListener("pointerup", requestUpdate, true);
+  window.addEventListener("mouseup", requestUpdate, true);
+  window.addEventListener("touchend", requestUpdate, true);
+  requestUpdate();
+
+  return () => {
+    observer.disconnect();
+    window.removeEventListener("pointermove", requestUpdate, true);
+    window.removeEventListener("mousemove", requestUpdate, true);
+    window.removeEventListener("touchmove", requestUpdate, true);
+    window.removeEventListener("pointerup", requestUpdate, true);
+    window.removeEventListener("mouseup", requestUpdate, true);
+    window.removeEventListener("touchend", requestUpdate, true);
+    if (animationFrame) {
+      window.cancelAnimationFrame(animationFrame);
+    }
+    removeOverlay();
+  };
+}
+
 interface ChessgroundProps extends Config {
   setBoardFen?: (fen: string) => void;
 }
@@ -165,6 +287,13 @@ function ChessgroundInner(props: ChessgroundProps & { ref?: Ref<ChessgroundRef> 
     apiRef.current = chessgroundApi;
     lastConfigRef.current = currentConfig;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const root = boardRef.current;
+    if (!root) return;
+
+    return installDragPieceOverlay(root);
+  }, []);
 
   // Update config when it changes, using deep equality that handles Maps, Sets, and objects
   useEffect(() => {
