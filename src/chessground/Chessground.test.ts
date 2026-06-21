@@ -113,6 +113,37 @@ describe("Chessground drag artifact CSS", () => {
     expect(pieceRule).toMatch(/will-change:\s*auto/);
     expect(pieceRule).not.toMatch(/will-change:\s*transform/);
   });
+
+  it("uses ::before pseudo-elements for all full-square highlights to avoid compositing seam", async () => {
+    // @ts-expect-error Node types are not included in this frontend tsconfig.
+    const { readFileSync } = await import("node:fs");
+    const globalCss = readFileSync("src/styles/global.css", "utf8") as string;
+    const colorsCss = readFileSync("src/styles/chessgroundColorsOverride.css", "utf8") as string;
+    const allCss = globalCss + colorsCss;
+
+    // All full-square highlight backgrounds must use ::before with inset: 1px
+    const beforeRules = [
+      /square\.move-dest\.hover::before/,
+      /square\.move-dest:hover::before/,
+      /square\.oc\.move-dest:hover::before/,
+      /square\.selected::before/,
+      /square\.premove-dest:hover::before/,
+      /square\.current-premove::before/,
+      /square\.last-move::before/,
+    ];
+    for (const pattern of beforeRules) {
+      expect(allCss).toMatch(pattern);
+    }
+
+    // Original background/background-color must be removed from the element
+    const elementRules = [
+      /square\.selected\s*\{[^}]*background\s*:\s*none/,
+      /square\.last-move\s*\{[^}]*background\s*:\s*none/,
+    ];
+    for (const pattern of elementRules) {
+      expect(allCss).toMatch(pattern);
+    }
+  });
 });
 
 describe("Chessground wrapper config change detection", () => {

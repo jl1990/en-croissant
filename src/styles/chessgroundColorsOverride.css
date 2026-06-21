@@ -1,8 +1,20 @@
-[data-mantine-color-scheme="dark"] cg-board square.selected {
+/** Selected square — painted via ::before to avoid WebKitGTK compositing seam */
+
+[data-mantine-color-scheme="dark"] cg-board square.selected::before {
   background: color-mix(in srgb, var(--mantine-primary-color-5) 50%, transparent);
 }
-[data-mantine-color-scheme="light"] cg-board square.selected {
+[data-mantine-color-scheme="light"] cg-board square.selected::before {
   background: color-mix(in srgb, var(--mantine-primary-color-3) 50%, transparent);
+}
+
+cg-board square.selected::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+}
+
+cg-board square.selected {
+  background: none;
 }
 
 cg-board {
@@ -23,8 +35,15 @@ cg-board square.premove-dest {
 cg-board square.oc.premove-dest {
   background: radial-gradient(transparent 0%, transparent 80%, rgba(20, 30, 85, 0.2) 80%);
 }
-cg-board square.premove-dest:hover {
+cg-board square.premove-dest:hover::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
   background: rgba(20, 30, 85, 0.2);
+}
+
+cg-board square.premove-dest:hover {
+  background: none;
 }
 cg-board square.check {
   background: radial-gradient(
@@ -35,8 +54,28 @@ cg-board square.check {
     rgba(158, 0, 0, 0) 100%
   );
 }
-cg-board square.current-premove {
+cg-board square.current-premove::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
   background-color: rgba(20, 30, 85, 0.5);
+}
+
+cg-board square.current-premove {
+  background: none;
+}
+
+/** Last-move and check highlights — inset via ::before to avoid WebKitGTK seam */
+cg-board square.last-move::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  background-color: rgba(155, 199, 0, 0.41);
+  border-radius: 2px;
+}
+
+cg-board square.last-move {
+  background: none;
 }
 
 /** Alternating colors in rank/file labels */
