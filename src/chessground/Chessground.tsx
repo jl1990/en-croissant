@@ -98,31 +98,9 @@ function installDragPieceOverlay(root: HTMLElement): () => void {
     overlay?.remove();
     overlay = null;
     lastSrc = null;
-    // Flush compositor after drag ends — WebKitGTK may not invalidate the
-    // area where the dragging piece was hidden.
-    flushCompositor();
   };
 
   const snap = (v: number) => Math.round(v * window.devicePixelRatio) / window.devicePixelRatio;
-
-  /** WebKitGTK can leave stale compositor backing-store pixels after piece
-      element removal (move animation end, drag end). Toggling will-change
-      briefly destroys and recreates the compositing layer, forcing a clean
-      repaint of the affected area. Throttled by RAF. */
-  let flushPending = false;
-  const flushCompositor = () => {
-    if (flushPending) return;
-    flushPending = true;
-    const board = root.querySelector<HTMLElement>("cg-board");
-    if (!board) return;
-    board.style.willChange = "transform";
-    requestAnimationFrame(() => {
-      board.style.willChange = "";
-      flushPending = false;
-    });
-  };
-
-  let moveMutationPending = false;
 
   const updateOverlay = () => {
     animationFrame = 0;
@@ -168,24 +146,7 @@ function installDragPieceOverlay(root: HTMLElement): () => void {
     }
   };
 
-  /** Detect when a piece move animation completes (fading elements
-      removed) and flush the WebKitGTK compositor. */
-  const onMutation: MutationCallback = (mutations) => {
-    const hasFadingRemoval = mutations.some(
-      (m) =>
-        m.type === "childList" &&
-        Array.from(m.removedNodes).some(
-          (n) => n instanceof HTMLElement && n.classList?.contains("fading"),
-        ),
-    );
-    if (hasFadingRemoval) {
-      // Delay to let any remaining CSS transitions finish
-      setTimeout(() => flushCompositor(), 300);
-    }
-    requestUpdate();
-  };
-
-  const observer = new MutationObserver(onMutation);
+  const observer = new MutationObserver(requestUpdate);
   observer.observe(root, {
     attributes: true,
     attributeFilter: ["class", "style"],
