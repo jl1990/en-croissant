@@ -100,6 +100,7 @@ describe("Chessground drag artifact CSS", () => {
     const css = readFileSync("src/styles/chessgroundBaseOverride.css", "utf8") as string;
     const squareRule = css.match(/cg-board square\s*\{[^}]*\}/)?.[0] ?? "";
     expect(squareRule).toMatch(/outline:\s*1px\s+solid\s+transparent/);
+    expect(squareRule).toMatch(/clip-path:\s*inset\(1px\)/);
   });
 
   it("clips piece background painting away from square edges", async () => {
