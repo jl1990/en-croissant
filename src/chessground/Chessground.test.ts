@@ -119,35 +119,48 @@ describe("Chessground drag artifact CSS", () => {
     const { readFileSync } = await import("node:fs");
     const globalCss = readFileSync("src/styles/global.css", "utf8") as string;
     const colorsCss = readFileSync("src/styles/chessgroundColorsOverride.css", "utf8") as string;
-    const allCss = globalCss + colorsCss;
+    const baseCss = readFileSync("src/styles/chessgroundBaseOverride.css", "utf8") as string;
+    const allCss = globalCss + colorsCss + baseCss;
 
     // All full-square highlight backgrounds must use ::before with inset: 1px
-    const beforeRules = [
+    const beforeSelectors = [
       /square\.move-dest\.hover::before/,
       /square\.move-dest:hover::before/,
+      /square\.oc\.move-dest\.hover::before/,
       /square\.oc\.move-dest:hover::before/,
       /square\.selected::before/,
+      /square\.premove-dest\.hover::before/,
       /square\.premove-dest:hover::before/,
       /square\.current-premove::before/,
       /square\.last-move::before/,
     ];
-    for (const pattern of beforeRules) {
+    for (const pattern of beforeSelectors) {
       expect(allCss).toMatch(pattern);
     }
 
-    // Original background/background-color must be removed from the element
-    const elementRules = [
-      /square\.selected\s*\{[^}]*background\s*:\s*none/,
-      /square\.last-move\s*\{[^}]*background\s*:\s*none/,
-      /square\.move-dest\.hover\s*\{[^}]*background\s*:\s*none\s*!important/,
-      /square\.premove-dest\.hover\s*\{[^}]*background\s*:\s*none\s*!important/,
+    // Each ::before rule must include inset: 1px
+    expect(allCss).toMatch(/::before\s*\{[^}]*inset:\s*1px/);
+
+    // Element resets must have background: none !important to beat
+    // Chessboard.module.css (imported after these files with higher specificity).
+    // Some selectors are comma-grouped (e.g., .move-dest:hover, .move-dest.hover),
+    // so we check that each selector appears in a rule containing the reset.
+    const resetPatterns = [
+      [/move-dest\.hover/, /move-dest:hover/, /background:\s*none\s*!important/],
+      [/oc\.move-dest\.hover/, /oc\.move-dest:hover/, /background:\s*none\s*!important/],
+      [/square\.selected\s*\{[^}]*background:\s*none\s*!important/],
+      [/premove-dest\.hover/, /premove-dest:hover/, /background:\s*none\s*!important/],
+      [/current-premove\s*\{[^}]*background:\s*none\s*!important/],
+      [/last-move\s*\{[^}]*background:\s*none\s*!important/],
     ];
-    for (const pattern of elementRules) {
-      expect(allCss).toMatch(pattern);
+    for (const patterns of resetPatterns) {
+      for (const pattern of patterns) {
+        expect(allCss).toMatch(pattern);
+      }
     }
 
-    // Ensure no clip-path on cg-board square (prevents visible gaps)
-    const squareRule = allCss.match(/cg-board square\s*\{[^}]*\}/)?.[0] ?? "";
+    // Ensure no clip-path on cg-board square (prevents visible white border)
+    const squareRule = baseCss.match(/cg-board square\s*\{[^}]*\}/)?.[0] ?? "";
     expect(squareRule).not.toMatch(/clip-path/);
   });
 });
