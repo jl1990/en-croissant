@@ -330,7 +330,8 @@ function ChessgroundInner(props: ChessgroundProps & { ref?: Ref<ChessgroundRef> 
       style={{
         aspectRatio: 1,
         width: "100%",
-        "--board-image": `url('/board/${boardImage}')`,
+        "--board-color-light": boardCoordColors.white,
+        "--board-color-dark": boardCoordColors.black,
         "--board-coord-color-white": boardCoordColors.white,
         "--board-coord-color-black": boardCoordColors.black,
       }}

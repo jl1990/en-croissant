@@ -38,10 +38,6 @@ cg-board square {
   height: 12.5%;
   box-sizing: border-box;
   pointer-events: none;
-  /* WebKitGTK shows a dark SVG-texture seam at adjacent 12.5% element
-     boundaries (subpixel compositing artifact). A transparent outline fills
-     the boundary without affecting layout or visible appearance. */
-  outline: 1px solid transparent;
 }
 
 cg-board square.move-dest {

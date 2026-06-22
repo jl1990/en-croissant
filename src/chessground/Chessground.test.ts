@@ -68,6 +68,29 @@ describe("parseCssUrl", () => {
   });
 });
 
+describe("Chessground board background CSS", () => {
+  it("uses CSS checkerboard colors instead of board image URLs for the board background", async () => {
+    // @ts-expect-error Node types are not included in this frontend tsconfig.
+    const { readFileSync } = await import("node:fs");
+    const chessgroundTsx = readFileSync("src/chessground/Chessground.tsx", "utf8") as string;
+    const colorsCss = readFileSync("src/styles/chessgroundColorsOverride.css", "utf8") as string;
+    const globalCss = readFileSync("src/styles/global.css", "utf8") as string;
+    const boardRule = colorsCss.match(/cg-board\s*\{[^}]*\}/)?.[0] ?? "";
+
+    expect(chessgroundTsx).not.toContain('"--board-image"');
+    expect(chessgroundTsx).toContain('"--board-color-light": boardCoordColors.white');
+    expect(chessgroundTsx).toContain('"--board-color-dark": boardCoordColors.black');
+
+    expect(boardRule).toMatch(/background-image:\s*conic-gradient\(/);
+    expect(boardRule).toMatch(/var\(--board-color-dark/);
+    expect(boardRule).toMatch(/var\(--board-color-light/);
+    expect(boardRule).toMatch(/background-size:\s*25%\s+25%/);
+    expect(boardRule).not.toMatch(/--board-image|url\(/);
+    expect(globalCss).not.toMatch(/DIAGNOSTIC A/);
+    expect(globalCss).not.toMatch(/cg-board\s*\{[^}]*background-image/);
+  });
+});
+
 describe("Chessground drag artifact CSS", () => {
   it("keeps native drag/ghost paint disabled and uses a non-transform overlay", async () => {
     // @ts-expect-error Node types are not included in this frontend tsconfig.
@@ -94,12 +117,26 @@ describe("Chessground drag artifact CSS", () => {
     expect(css).toMatch(/cg-board square\.oc\.move-dest::after/);
   });
 
-  it("adds transparent outline to squares to prevent WebKitGTK compositing seam", async () => {
+  it("keeps highlight backgrounds as direct element fills (no ::before inset)", async () => {
+    // @ts-expect-error Node types are not included in this frontend tsconfig.
+    const { readFileSync } = await import("node:fs");
+    const globalCss = readFileSync("src/styles/global.css", "utf8") as string;
+    const colorsCss = readFileSync("src/styles/chessgroundColorsOverride.css", "utf8") as string;
+    const allCss = globalCss + colorsCss;
+
+    // No ::before pseudo-elements for highlights
+    expect(allCss).not.toMatch(/\.move-dest(?:\.hover|:hover)::before/);
+    expect(allCss).not.toMatch(/\.selected::before/);
+    expect(allCss).not.toMatch(/\.current-premove::before/);
+    expect(allCss).not.toMatch(/\.last-move::before/);
+  });
+
+  it("does not add outline or clip-path to cg-board square", async () => {
     // @ts-expect-error Node types are not included in this frontend tsconfig.
     const { readFileSync } = await import("node:fs");
     const css = readFileSync("src/styles/chessgroundBaseOverride.css", "utf8") as string;
     const squareRule = css.match(/cg-board square\s*\{[^}]*\}/)?.[0] ?? "";
-    expect(squareRule).toMatch(/outline:\s*1px\s+solid\s+transparent/);
+    expect(squareRule).not.toMatch(/outline|clip-path/);
   });
 
   it("clips piece background painting away from square edges", async () => {
@@ -114,54 +151,16 @@ describe("Chessground drag artifact CSS", () => {
     expect(pieceRule).not.toMatch(/will-change:\s*transform/);
   });
 
-  it("uses ::before pseudo-elements for all full-square highlights to avoid compositing seam", async () => {
+  it("no experimental box-shadow or .hover overrides in baseline", async () => {
     // @ts-expect-error Node types are not included in this frontend tsconfig.
     const { readFileSync } = await import("node:fs");
     const globalCss = readFileSync("src/styles/global.css", "utf8") as string;
     const colorsCss = readFileSync("src/styles/chessgroundColorsOverride.css", "utf8") as string;
-    const baseCss = readFileSync("src/styles/chessgroundBaseOverride.css", "utf8") as string;
-    const allCss = globalCss + colorsCss + baseCss;
+    const allCss = globalCss + colorsCss;
 
-    // All full-square highlight backgrounds must use ::before with inset: 1px
-    const beforeSelectors = [
-      /square\.move-dest\.hover::before/,
-      /square\.move-dest:hover::before/,
-      /square\.oc\.move-dest\.hover::before/,
-      /square\.oc\.move-dest:hover::before/,
-      /square\.selected::before/,
-      /square\.premove-dest\.hover::before/,
-      /square\.premove-dest:hover::before/,
-      /square\.current-premove::before/,
-      /square\.last-move::before/,
-    ];
-    for (const pattern of beforeSelectors) {
-      expect(allCss).toMatch(pattern);
-    }
-
-    // Each ::before rule must include inset: 1px
-    expect(allCss).toMatch(/::before\s*\{[^}]*inset:\s*1px/);
-
-    // Element resets must have background: none !important to beat
-    // Chessboard.module.css (imported after these files with higher specificity).
-    // Some selectors are comma-grouped (e.g., .move-dest:hover, .move-dest.hover),
-    // so we check that each selector appears in a rule containing the reset.
-    const resetPatterns = [
-      [/move-dest\.hover/, /move-dest:hover/, /background:\s*none\s*!important/],
-      [/oc\.move-dest\.hover/, /oc\.move-dest:hover/, /background:\s*none\s*!important/],
-      [/square\.selected\s*\{[^}]*background:\s*none\s*!important/],
-      [/premove-dest\.hover/, /premove-dest:hover/, /background:\s*none\s*!important/],
-      [/current-premove\s*\{[^}]*background:\s*none\s*!important/],
-      [/last-move\s*\{[^}]*background:\s*none\s*!important/],
-    ];
-    for (const patterns of resetPatterns) {
-      for (const pattern of patterns) {
-        expect(allCss).toMatch(pattern);
-      }
-    }
-
-    // Ensure no clip-path on cg-board square (prevents visible white border)
-    const squareRule = baseCss.match(/cg-board square\s*\{[^}]*\}/)?.[0] ?? "";
-    expect(squareRule).not.toMatch(/clip-path/);
+    // No box-shadow overlay or z-index:1 (baseline uses direct backgrounds)
+    expect(allCss).not.toMatch(/box-shadow:.*--cg-highlight/);
+    expect(allCss).not.toMatch(/z-index:\s*1/);
   });
 });
 
